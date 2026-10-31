@@ -15,15 +15,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Copy original game into APK assets
+      - name: Validate and copy Rato Snack v25
         run: |
+          test -f rato_snack_v25.html || (echo "ERRO: adicione rato_snack_v25.html à raiz da branch android-apk-ratosnack. O build não usará uma versão antiga como substituta." && exit 1)
           mkdir -p app/src/main/assets/www
-          cp Index.html app/src/main/assets/www/Index.html
+          cp rato_snack_v25.html app/src/main/assets/www/Index.html
           cp icon-192.png icon-512.png icon-maskable-512.png app/src/main/assets/www/
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: Rato-Snack-APK-teste
+          name: Rato-Snack-APK-v25
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
