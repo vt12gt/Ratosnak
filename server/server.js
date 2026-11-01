@@ -284,7 +284,7 @@ server.on('upgrade', async (req, socket, head) => {
     const issued = wsTickets.get(ticket);
     if (!issued || issued.expiresAt <= Date.now()) {
       if (ticket) wsTickets.delete(ticket);
-      socket.write('HTTP/1.1 401 Unauthorized\\r\\n\\r\\n');
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
     }
