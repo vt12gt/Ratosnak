@@ -245,7 +245,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { id: String(user.id), nick: String(user.nickname) }, origin);
     }
     if (url.pathname === '/api/ws-ticket' && req.method === 'POST') {
-      const token = String(req.headers.authorization || '').replace(/^Bearer\\s+/i, '');
+      const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
       const user = await authenticate(token);
       if (!user) return json(res, 401, { error: 'sessao_invalida' }, origin);
       const now = Date.now();
