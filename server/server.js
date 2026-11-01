@@ -20,6 +20,7 @@ const RECONNECT_GRACE_MS = 30000;
 const rooms = new Map();
 const socketsByUser = new Map();
 const roomByUser = new Map();
+const wsTickets = new Map();
 
 function json(res, status, data, origin) {
   res.writeHead(status, {
@@ -243,6 +244,16 @@ const server = http.createServer(async (req, res) => {
       if (result.status !== 200 || !result.data.ok || !user) return json(res, 401, { error: 'sessao_invalida' }, origin);
       return json(res, 200, { id: String(user.id), nick: String(user.nickname) }, origin);
     }
+    if (url.pathname === '/api/ws-ticket' && req.method === 'POST') {
+      const token = String(req.headers.authorization || '').replace(/^Bearer\\s+/i, '');
+      const user = await authenticate(token);
+      if (!user) return json(res, 401, { error: 'sessao_invalida' }, origin);
+      const now = Date.now();
+      for (const [key, value] of wsTickets) if (value.expiresAt <= now) wsTickets.delete(key);
+      const ticket = crypto.randomUUID();
+      wsTickets.set(ticket, { user, expiresAt: now + 30000 });
+      return json(res, 200, { ticket, expiresIn: 30 }, origin);
+    }
     if (url.pathname === '/api/logout' && req.method === 'POST') {
       const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
       const result = await upstream('/api/logout', 'POST', {}, token);
@@ -269,12 +280,16 @@ server.on('upgrade', async (req, socket, head) => {
     return;
   }
   try {
-    const user = await authenticate(url.searchParams.get('token'));
-    if (!user) {
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    const ticket = String(url.searchParams.get('ticket') || '');
+    const issued = wsTickets.get(ticket);
+    if (!issued || issued.expiresAt <= Date.now()) {
+      if (ticket) wsTickets.delete(ticket);
+      socket.write('HTTP/1.1 401 Unauthorized\\r\\n\\r\\n');
       socket.destroy();
       return;
     }
+    wsTickets.delete(ticket); // ticket de uso único
+    const user = issued.user;
     wss.handleUpgrade(req, socket, head, ws => {
       wss.emit('connection', ws, req, user);
     });
