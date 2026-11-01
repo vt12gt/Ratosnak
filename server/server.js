@@ -30,7 +30,7 @@ function json(res, status, data, origin) {
       'Vary': 'Origin'
     } : {})
   });
-  res.end(JSON.stringify(data));
+  res.end(JSON.stringify({ s: status, ...data }));
 }
 
 function cors(req, res) {
