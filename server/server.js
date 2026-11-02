@@ -149,8 +149,9 @@ function destroyRoom(room, notify = true) {
   }
   room.players.clear();
 }
-function createRoom() {
+function createRoom(mode) {
   const room = {
+    mode,
     id: crypto.randomUUID(),
     players: new Map(),
     hostId: null,
@@ -161,11 +162,11 @@ function createRoom() {
   rooms.set(room.id, room);
   return room;
 }
-function firstAvailableRoom() {
+function firstAvailableRoom(mode) {
   for (const room of rooms.values()) {
-    if (!room.started && !room.countdown && room.players.size < MAX_PLAYERS) return room;
+    if (room.mode === mode && !room.started && !room.countdown && room.players.size < MAX_PLAYERS) return room;
   }
-  return createRoom();
+  return createRoom(mode);
 }
 function startCountdown(room) {
   if (room.started || room.countdown || room.players.size < 2) return;
@@ -173,9 +174,9 @@ function startCountdown(room) {
     room.countdown = null;
     if (!rooms.has(room.id) || room.players.size < 2) return;
     room.started = true;
-    broadcast(room, { t: 'start' });
+    broadcast(room, { t: 'start', mode: room.mode });
   }, COUNTDOWN_MS);
-  broadcast(room, { t: 'countdown', ms: COUNTDOWN_MS });
+  broadcast(room, { t: 'countdown', ms: COUNTDOWN_MS, mode: room.mode });
 }
 function addPlayer(room, user, ws) {
   const old = room.players.get(user.id);
@@ -196,7 +197,7 @@ function addPlayer(room, user, ws) {
     if (host && host.ws) send(host.ws, { t: old ? 'peer_back' : 'peer_join', id: user.id, nick: user.nick, slot: player.slot + 1 });
   }
   if (room.started) {
-    send(ws, { t: 'start' });
+    send(ws, { t: 'start', mode: room.mode });
     const host = room.players.get(room.hostId);
     if (host && host.id !== user.id) send(host.ws, { t: old ? 'peer_back' : 'peer_join', id: user.id, nick: user.nick, slot: player.slot + 1 });
   } else {
@@ -353,7 +354,10 @@ wss.on('connection', (ws, req, user) => {
         addPlayer(room, user, ws);
         return;
       }
-      room = firstAvailableRoom();
+      const allowedModes = new Set(['quick','survival','challenge','team','boss','infinite','daily','treino','mundial']);
+      const requestedMode = String(m.mode || 'quick');
+      const selectedMode = allowedModes.has(requestedMode) ? requestedMode : 'quick';
+      room = firstAvailableRoom(selectedMode);
       addPlayer(room, user, ws);
       return;
     }
