@@ -134,7 +134,7 @@ function broadcast(room, message, exceptId) {
 }
 function roster(room) {
   const players = roomPlayers(room);
-  for (const p of room.players.values()) send(p.ws, { t: 'roster', players });
+  for (const p of room.players.values()) send(p.ws, { t: 'roster', mode: room.mode, players });
 }
 function clearCountdown(room) {
   if (room.countdown) clearTimeout(room.countdown);
@@ -189,7 +189,7 @@ function addPlayer(room, user, ws) {
   roomByUser.set(user.id, room.id);
   if (!room.hostId) room.hostId = user.id;
   const isHost = room.hostId === user.id;
-  send(ws, { t: 'joined', host: room.hostId, isHost, players: roomPlayers(room) });
+  send(ws, { t: 'joined', host: room.hostId, isHost, mode: room.mode, players: roomPlayers(room) });
   if (isHost) {
     // Host does not need a peer_join event for itself.
   } else {
@@ -198,8 +198,6 @@ function addPlayer(room, user, ws) {
   }
   if (room.started) {
     send(ws, { t: 'start', mode: room.mode });
-    const host = room.players.get(room.hostId);
-    if (host && host.id !== user.id) send(host.ws, { t: old ? 'peer_back' : 'peer_join', id: user.id, nick: user.nick, slot: player.slot + 1 });
   } else {
     startCountdown(room);
   }
