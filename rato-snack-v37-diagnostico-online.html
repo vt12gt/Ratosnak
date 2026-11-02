@@ -833,7 +833,7 @@ async function mpAnswer(){try{if(typeof RTCPeerConnection==='undefined')throw 0;
 function mpLeave(){try{if(mpDC)mpDC.close();if(mpPC)mpPC.close()}catch(_){}mpDC=mpPC=null;if(mpRole==='host'||mpConns.length){for(const c of mpConns){try{c.dc.close();c.pc.close()}catch(_){}}mpConns.length=0;mpSlots.length=0}mpRole=null;mpPending=false;if(mpOnline){mpOnline=false;olLeaveRoom()}}
 function mpBroadcastEnd(){if(mpRole!=='host')return;for(const c of mpConns)try{if(c.open)c.dc.send('{"end":1}')}catch(_){}setTimeout(mpLeave,400)}
 function mpClientMsg(e){let m;try{m=JSON.parse(e.data)}catch(_){return}
- if(m.start&&mpRole!=='client'){mpRole='client';startGame(m.mode||ol.selectedMode||'quick');return}
+ if(m.start&&mpRole!=='client'){mpRole='client';mpOnline=true;startGame0(m.mode||ol.selectedMode||mode);olHello();return}
  if(m.end){const w=mpRole==='client';mpLeave();if(w)toMenu();return}
  if(m.st&&mpRole==='client')mpApply(m)}
 // anfitrião: os convidados controlam os ratos bots[0..2]; se um convidado cair da sala, o rato volta para a IA
@@ -902,6 +902,7 @@ function olSetAuth(j){ol.token=j.token;ol.id=j.id;ol.nick=j.nick;olSave()}
 async function olConnect(){if(ol.ws&&ol.ws.readyState===1)return;let issued;try{issued=await olApi('/api/ws-ticket',{},ol.token)}catch(e){throw new Error('Não foi possível solicitar o ticket: '+(e&&e.message||'falha de rede'))}if(issued.s!==200||!issued.ticket)throw new Error('Ticket recusado pelo servidor (HTTP '+issued.s+', '+(issued.error||'sem detalhe')+').');return new Promise((res,rej)=>{let done=false;let timer=null;const finish=(err)=>{if(done)return;done=true;if(timer)clearTimeout(timer);if(err)rej(err);else res()};let ws;try{ws=new WebSocket(olWs(ol.url)+'/ws?ticket='+encodeURIComponent(issued.ticket));ol.ws=ws}catch(e){finish(new Error('Não foi possível abrir o WebSocket: '+(e&&e.message||'URL inválida')));return}timer=setTimeout(()=>{try{ws.close()}catch(_){}finish(new Error('Tempo esgotado: o WebSocket não confirmou a entrada em 12 segundos.'))},12000);ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(_){return}if(m.t==='hello')finish();olMsg(m)};ws.onerror=()=>finish(new Error('Falha no WebSocket. Verifique a conexão, o endereço e a configuração do servidor.'));ws.onclose=ev=>{if(ol.ws===ws)ol.ws=null;if(!done)finish(new Error('WebSocket fechado antes da confirmação (código '+ev.code+').'));olClosed(ev.code)}})}
 function olSend(o){if(ol.ws&&ol.ws.readyState===1){ol.ws.send(JSON.stringify(o));return true}return false}
 async function olPlay(selectedMode){await olConnect();ol.inRoom=true;ol.bye=false;ol.selectedMode=selectedMode;olSend({t:'play',mode:selectedMode})}
+async function olQueueMode(k){if(!ol.onlineReady||!ol.token){showToast('Entre na sua conta Ratópolis para jogar online.',3);return}if(ol.inRoom&&ol.ws&&ol.ws.readyState===1)return;ol.selectedMode=k||mode;try{await olPlay(ol.selectedMode)}catch(e){ol.inRoom=false;showToast('Não foi possível entrar na partida: '+(e.message||'conexão falhou'),4)}}
 function olDC(uid){return{get readyState(){return ol.ws&&ol.ws.readyState===1?'open':'closed'},get bufferedAmount(){return ol.ws?ol.ws.bufferedAmount:0},send(str){olSend({t:'st',to:uid,d:str})},close(){}}}
 function olGuestDC(){return{get readyState(){return ol.ws&&ol.ws.readyState===1?'open':'closed'},send(str){olSend({t:'in',d:str})},close(){}}}
 function olHello(){olSend({t:'in',d:JSON.stringify({h:ol.nick,rat:prefs.rat,col:prefs.color,sk:prefs.skin})})}
@@ -909,10 +910,10 @@ function olLeaveRoom(){if(ol.ws&&ol.ws.readyState===1)olSend(ol.isHost?{t:'ctl',
 function olClosed(code){if(ol.bye){ol.bye=false;return}if(code===4001){showToast('⚠️ Sua conta entrou em outro aparelho.',4);ol.inRoom=false;if(mpOnline){mpLeave();toMenu()}return}
  if(!ol.inRoom)return;ol.tries++;if(ol.tries>12){showToast('Conexão perdida.',3);ol.inRoom=false;if(mpOnline){mpLeave();toMenu()}return}showToast('📶 Conexão perdida. Reconectando…',3);setTimeout(()=>{if(ol.inRoom)olConnect().then(()=>{ol.tries=0}).catch(()=>olClosed(1006))},Math.min(8000,1000*ol.tries))}
 function olSlotBind(c){const i=Math.max(0,c.slot-1);mpSlots[i]=c;if(bots[i]){if(!bots[i].alive)respawnBot(i);mpBind(bots[i],c)}}
-function olHostStart(selectedMode){mpSlots.length=0;for(const c of mpConns)if(c.open)mpSlots[Math.max(0,c.slot-1)]=c;mpRole='host';mpPending=true;mpOnline=true;mpClose();startGame(selectedMode||ol.selectedMode||'quick')}
+function olHostStart(selectedMode){mpSlots.length=0;for(const c of mpConns)if(c.open)mpSlots[Math.max(0,c.slot-1)]=c;mpRole='host';mpPending=true;mpOnline=true;mpClose();startGame0(selectedMode||ol.selectedMode||mode)}
 function olMsg(m){
  switch(m.t){
-  case 'joined':ol.hostId=m.host;ol.isHost=m.isHost;ol.players=m.players;ol.selectedMode=m.mode||ol.selectedMode;if(m.isHost&&!running&&mpRole!=='host')olHostStart(ol.selectedMode||mode);break;
+  case 'joined':ol.hostId=m.host;ol.isHost=m.isHost;ol.players=m.players;ol.selectedMode=m.mode||ol.selectedMode||mode;if(m.isHost&&!running&&mpRole!=='host')olHostStart(ol.selectedMode);break;
   case 'roster':ol.players=m.players;if(m.mode)ol.selectedMode=m.mode;break;
   case 'countdown':showToast('Partida começando em '+Math.round(m.ms/1000)+' s…',3);break;
   case 'start':ol.view=false;ol.selectedMode=m.mode||ol.selectedMode||'quick';if(ol.isHost){if(mpRole!=='host')olHostStart(ol.selectedMode)}else if(mpRole!=='client'){mpOnline=true;mpClientMsg({data:JSON.stringify({start:1,mode:ol.selectedMode})});olHello()}break;
@@ -1363,8 +1364,8 @@ canvas.addEventListener('contextmenu',e=>e.preventDefault());
 $('menu').addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('[data-sheet]');if(b){if(b.dataset.sheet==='mp')mpOpen();else openSheet(b.dataset.sheet)}});
 $('sheetBody').addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('[data-act]');if(b)onAct(b.dataset.act)});
 $('sheetBack').onclick=()=>{$('sheet').classList.add('hidden');$('menu').classList.remove('hidden');menuInfo()};
-$('play').onclick=()=>{if(ol.onlineReady&&ol.token){olQueueMode(mode);return}startGame(mode)};applySkillsToCfg();applyControlPrefs();applyA11y();
-function startGame(m){const mm=m||mode;if(mm==='mundial'){if(!wbOpen()){gAlert(wbMsg());return}if(prog.wbClaim===wbId()){gAlert('👑 Você já derrotou o Colosso Mundial nesta janela! Volte no próximo horário (10:00 ou 22:00).');return}wbRun=true;wbRunId=wbId();wbA0=wbHpNow();m='boss'}else wbRun=false;if(mm==='daily'&&!dcStart())return;startGame0(m);if(!prefs.tut[mode])openTut(mode);else{const e=evtOf();showToast('🌟 '+e.n+': '+e.d,3)}}
+$('play').onclick=()=>startGame(mode);applySkillsToCfg();applyControlPrefs();applyA11y();
+function startGame(m){const mm=m||mode;if(ol.onlineReady&&ol.token&&!ol.inRoom){olQueueMode(mm);return}if(mm==='mundial'){if(!wbOpen()){gAlert(wbMsg());return}if(prog.wbClaim===wbId()){gAlert('👑 Você já derrotou o Colosso Mundial nesta janela! Volte no próximo horário (10:00 ou 22:00).');return}wbRun=true;wbRunId=wbId();wbA0=wbHpNow();m='boss'}else wbRun=false;if(mm==='daily'&&!dcStart())return;startGame0(m);if(!prefs.tut[mode])openTut(mode);else{const e=evtOf();showToast('🌟 '+e.n+': '+e.d,3)}}
 function openTut(k){const T=TUT[k];if(!T)return;tutOpen=true;paused=true;$('tutI').textContent=T[0];$('tutT').textContent=T[1];$('tutL').innerHTML='<p>🕹️ Arraste o dedo para guiar • segure ⚡ para acelerar.</p>'+T[2].map(x=>`<p>• ${x}</p>`).join('');$('tut').classList.remove('hidden');syncBoostBtn()}
 function closeTut(){if(!tutOpen)return;tutOpen=false;paused=false;prefs.tut[mode]=1;savePrefs();$('tut').classList.add('hidden');releaseDrag();syncBoostBtn()}
 $('tutOk').onclick=closeTut;
