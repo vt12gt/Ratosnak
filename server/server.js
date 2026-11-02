@@ -164,7 +164,7 @@ function createRoom(mode) {
 }
 function firstAvailableRoom(mode) {
   for (const room of rooms.values()) {
-    if (room.mode === mode && !room.started && !room.countdown && room.players.size < MAX_PLAYERS) return room;
+    if (room.mode === mode && room.players.size < MAX_PLAYERS) return room;
   }
   return createRoom(mode);
 }
@@ -358,6 +358,8 @@ wss.on('connection', (ws, req, user) => {
       const requestedMode = String(m.mode || 'quick');
       const selectedMode = allowedModes.has(requestedMode) ? requestedMode : 'quick';
       room = firstAvailableRoom(selectedMode);
+      // A solo player starts immediately with local AI bots; later real players join this live room.
+      room.started = true;
       addPlayer(room, user, ws);
       return;
     }
