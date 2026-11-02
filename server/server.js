@@ -87,12 +87,36 @@ async function snackUpstream(path, method, body, token) {
   return { status: response.status, data };
 }
 
+function extractRatopolisPlayer(data) {
+  if (!data || typeof data !== 'object') return null;
+  const candidates = [
+    data.jogador, data.player, data.user, data.usuario,
+    data.data && data.data.jogador,
+    data.data && data.data.player,
+    data.data && data.data.user,
+    data.data && data.data.usuario
+  ];
+  for (const user of candidates) {
+    if (!user || typeof user !== 'object') continue;
+    const id = user.id ?? user.user_id ?? user.userId;
+    const nick = user.nickname ?? user.nick ?? user.username ?? user.nome;
+    if (id != null && String(id).trim() && nick != null && String(nick).trim()) {
+      return { id: String(id), nick: String(nick) };
+    }
+  }
+  return null;
+}
+
 async function authenticate(token) {
-  if (!token || token.length > 512) return null;
+  if (!token || token.length > 4096) return null;
   const result = await upstream('/api/me', 'GET', undefined, token);
-  const user = result.data && result.data.jogador;
-  if (result.status !== 200 || !result.data.ok || !user || !user.id || !user.nickname) return null;
-  return { id: String(user.id), nick: String(user.nickname), token };
+  const user = result.status === 200 ? extractRatopolisPlayer(result.data) : null;
+  if (!user) {
+    console.warn('Ratópolis session rejected for ticket; upstream status:', result.status,
+      'response keys:', Object.keys(result.data || {}).join(','));
+    return null;
+  }
+  return { ...user, token };
 }
 
 function roomPlayers(room) {
@@ -240,9 +264,13 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/me' && req.method === 'GET') {
       const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
       const result = await upstream('/api/me', 'GET', undefined, token);
-      const user = result.data && result.data.jogador;
-      if (result.status !== 200 || !result.data.ok || !user) return json(res, 401, { error: 'sessao_invalida' }, origin);
-      return json(res, 200, { id: String(user.id), nick: String(user.nickname) }, origin);
+      const user = result.status === 200 ? extractRatopolisPlayer(result.data) : null;
+      if (!user) {
+        console.warn('Ratópolis /api/me rejected; upstream status:', result.status,
+          'response keys:', Object.keys(result.data || {}).join(','));
+        return json(res, 401, { error: 'sessao_invalida' }, origin);
+      }
+      return json(res, 200, user, origin);
     }
     if (url.pathname === '/api/ws-ticket' && req.method === 'POST') {
       const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
