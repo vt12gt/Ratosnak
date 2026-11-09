@@ -1,0 +1,25 @@
+name: RativaSnack authoritative tests
+on:
+  push:
+    branches: [test/server-authoritative]
+    paths:
+      - 'server/**'
+      - '.github/workflows/server-authoritative-tests.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/**'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+        working-directory: server
+      - run: npm test
+        working-directory: server
+      - run: node --check server.js && node --check authoritative-engine.js
+        working-directory: server
