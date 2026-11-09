@@ -97,8 +97,16 @@ function moveSnake(p, dt, now) {
   else p.boostEnergy = Math.min(100, p.boostEnergy + 19 * dt);
   const speed = 150 * (wantsBoost ? 1.45 : 1);
   const oldX = p.x, oldY = p.y;
-  p.x = (p.x + Math.cos(p.angle) * speed * dt + WORLD_W) % WORLD_W;
-  p.y = (p.y + Math.sin(p.angle) * speed * dt + WORLD_H) % WORLD_H;
+  const nextX = p.x + Math.cos(p.angle) * speed * dt;
+  const nextY = p.y + Math.sin(p.angle) * speed * dt;
+  if (nextX < p.radius || nextY < p.radius || nextX > WORLD_W - p.radius || nextY > WORLD_H - p.radius) {
+    p.x = clamp(nextX, p.radius, WORLD_W - p.radius);
+    p.y = clamp(nextY, p.radius, WORLD_H - p.radius);
+    p.segments.unshift({ x: oldX, y: oldY });
+    kill(p, now, true);
+    return;
+  }
+  p.x = nextX; p.y = nextY;
   p.segments.unshift({ x: oldX, y: oldY });
   if (p.segments.length > Math.min(MAX_LENGTH, p.length * 3)) p.segments.length = Math.min(MAX_LENGTH, p.length * 3);
   if (p.shield > 0) p.shield = Math.max(0, p.shield - dt);
@@ -109,9 +117,9 @@ function distance2(a, b) {
   dx = Math.min(dx, WORLD_W - dx); dy = Math.min(dy, WORLD_H - dy);
   return dx * dx + dy * dy;
 }
-function kill(p, now) {
-  if (!p.alive || p.shield > 0 || p.paused) return;
-  p.alive = false; p.boostActive = false; p.respawnAt = now + 1200;
+function kill(p, now, force = false) {
+  if (!p.alive || (!force && p.shield > 0) || p.paused) return;
+  p.alive = false; p.boostActive = false; p.respawnAt = now + 3000;
   p.score = Math.max(0, p.score);
 }
 function consume(sim, p) {
@@ -149,7 +157,7 @@ function serialize(p) {
   const g = [];
   const step = Math.max(1, Math.ceil(p.segments.length / 70));
   for (let i = 0; i < p.segments.length; i += step) g.push(Math.round(p.segments[i].x), Math.round(p.segments[i].y));
-  return { x: Math.round(p.x), y: Math.round(p.y), a: +p.angle.toFixed(3), pz: !!p.paused,
+  return { x: Math.round(p.x), y: Math.round(p.y), a: +p.angle.toFixed(3), pz: !!p.paused, rd: p.alive ? 0 : Math.max(0, p.respawnAt - Date.now()),
     r: p.radius, c: p.color, n: p.nick, l: p.length, al: p.alive ? 1 : 0,
     sh: +p.shield.toFixed(1), ba: p.boostActive ? 1 : 0, sk: p.skin || 'liso', ac: 'nenhum',
     ta: 'normal', sp: 0, st: 0, rt: p.rat || 'nenhum', g };
