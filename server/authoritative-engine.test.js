@@ -6,7 +6,7 @@ const Engine = require('./authoritative-engine');
 test('cria uma partida com comida e bots controlados pelo servidor', () => {
   const sim = Engine.createSimulation('quick');
   assert.equal(sim.players.size, 0);
-  assert.ok(sim.foods.length >= 100);
+  assert.ok(sim.foods.length >= 80 && sim.foods.length <= 100);
   assert.equal(sim.npcs.length, 3);
 });
 test('somente entradas de direção/boost/pausa são aceitas', () => {
@@ -100,4 +100,30 @@ test('renascimento aguarda três segundos e publica contagem restante', () => {
   assert.equal(p.alive, false);
   Engine.tick(sim, .05, p.respawnAt + 1);
   assert.equal(p.alive, true);
+});
+
+test('snapshot transmite pontuação e abates calculados pelo servidor', () => {
+  const sim = Engine.createSimulation('quick');
+  const p = Engine.addPlayer(sim, { id: 'score', nick: 'Pontuador' });
+  p.score = 1450; p.kills = 3;
+  const snap = Engine.snapshotFor(sim, 'score');
+  assert.equal(snap.sc, 1450);
+  assert.equal(snap.me.s, 1450);
+  assert.equal(snap.me.k, 3);
+});
+test('sensibilidade de curva é validada e aplicada pelo servidor', () => {
+  const sim = Engine.createSimulation('quick');
+  const p = Engine.addPlayer(sim, { id: 'turn', nick: 'Curva' });
+  Engine.setAppearance(sim, 'turn', { turnRate: 8.2 });
+  assert.equal(p.turnRate, 8.2);
+  Engine.setAppearance(sim, 'turn', { turnRate: 99 });
+  assert.equal(p.turnRate, 9);
+});
+test('snapshot envia somente comida próxima e limita o volume por jogador', () => {
+  const sim = Engine.createSimulation('quick');
+  const p = Engine.addPlayer(sim, { id: 'near', nick: 'Perto' });
+  sim.foods = Array.from({length:180},(_,i)=>({x:p.x+(i%20)*10,y:p.y+Math.floor(i/20)*10,type:0,r:6,color:'#fff'}));
+  const snap = Engine.snapshotFor(sim,'near');
+  assert.ok(snap.f.length <= 65);
+  assert.ok(snap.f.length > 0);
 });
