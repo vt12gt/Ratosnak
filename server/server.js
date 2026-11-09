@@ -185,23 +185,15 @@ function addPlayer(room, user, ws) {
   const old = room.players.get(user.id);
   if (old && old.reconnectTimer) clearTimeout(old.reconnectTimer);
   const player = old || { id: user.id, nick: user.nick, level: user.level || 1, ws: null, reconnectTimer: null, slot: room.players.size };
-  player.nick = user.nick;
-  player.level = user.level || 1;
-  player.ws = ws;
-  player.reconnectTimer = null;
+  player.nick = user.nick; player.level = user.level || 1; player.ws = ws; player.reconnectTimer = null;
   room.players.set(user.id, player);
   roomByUser.set(user.id, room.id);
   if (!room.hostId) room.hostId = user.id;
-  const isHost = room.hostId === user.id;
-  send(ws, { t: 'joined', host: room.hostId, isHost, mode: room.mode, players: roomPlayers(room) });
-  if (isHost) {
-    // Host does not need a peer_join event for itself.
-  } else {
-    const host = room.players.get(room.hostId);
-    if (host && host.ws) send(host.ws, { t: old ? 'peer_back' : 'peer_join', id: user.id, nick: user.nick, slot: player.slot + 1 });
-  }
+  GameEngine.addPlayer(room.simulation, user);
+  send(ws, { t: 'joined', host: null, isHost: false, authoritative: true, mode: room.mode, players: roomPlayers(room) });
   if (room.started) {
-    send(ws, { t: 'start', mode: room.mode });
+    send(ws, { t: 'start', mode: room.mode, authoritative: true });
+    startRoomSimulation(room);
   } else {
     startCountdown(room);
   }
@@ -213,8 +205,7 @@ function removePlayer(room, userId, deliberate = false) {
   if (p.reconnectTimer) clearTimeout(p.reconnectTimer);
   if (!deliberate && p.ws) {
     p.ws = null;
-    const host = room.players.get(room.hostId);
-    if (host && host.id !== userId) send(host.ws, { t: 'peer_offline', id: userId });
+    GameEngine.disconnectPlayer(room.simulation, userId, false);
     p.reconnectTimer = setTimeout(() => {
       if (p.ws) return;
       removePlayer(room, userId, true);
@@ -224,12 +215,8 @@ function removePlayer(room, userId, deliberate = false) {
   }
   room.players.delete(userId);
   roomByUser.delete(userId);
-  if (userId === room.hostId) {
-    destroyRoom(room, true);
-    return;
-  }
-  const host = room.players.get(room.hostId);
-  if (host) send(host.ws, { t: 'peer_leave', id: userId });
+  GameEngine.disconnectPlayer(room.simulation, userId, true);
+  if (userId === room.hostId) room.hostId = room.players.keys().next().value || null;
   if (!room.started && room.players.size < 2) clearCountdown(room);
   roster(room);
   if (room.players.size === 0) destroyRoom(room, false);
