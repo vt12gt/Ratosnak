@@ -8,7 +8,7 @@
 <meta name="robots" content="index,follow,max-image-preview:large">
 <link rel="canonical" href="https://vt12gt.github.io/Ratosnak/Index.html">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Ratópolis">
+<meta property="og:site_name" content="RativaPolis">
 <meta property="og:title" content="RativaSnack — Jogo de Cobrinha Multiplayer">
 <meta property="og:description" content="Entre no RativaSnack, colete queijo, cresça e jogue online com outros participantes.">
 <meta property="og:url" content="https://vt12gt.github.io/Ratosnak/Index.html">
@@ -333,7 +333,7 @@ button.who{border:0;color:#fff;font-family:inherit;font-style:italic;font-weight
   "applicationCategory": "Game",
   "publisher": {
     "@type": "Organization",
-    "name": "Ratópolis",
+    "name": "RativaPolis",
     "url": "https://vt12gt.github.io/ratopolis/"
   }
 }
@@ -539,7 +539,7 @@ async function mirrorIDB(force){const now=Date.now();if(!force&&now-idbT<3000)re
 async function restoreIDB(){try{if(HAD_SAVE)return;if(sessionStorage.getItem('ratoRestored'))return;
  const d=await idbOpen();if(!d)return;const rq=d.transaction('s').objectStore('s').get('snap');rq.onsuccess=()=>{d.close();const sn=rq.result;if(!sn||typeof sn!=='object'||!sn.ratoSnackStats)return;for(const k of SAVE_KEYS)if(typeof sn[k]==='string')try{localStorage.setItem(k,sn[k])}catch(e){}try{sessionStorage.setItem('ratoRestored','1')}catch(e){}location.reload()};rq.onerror=()=>d.close()}catch(e){}}
 restoreIDB();
-/* Sincronização futura com o Ratópolis: DESATIVADA. Sem rede, sem login. Ao ativar no futuro: enviar só eventos {id único, tipo, valor},
+/* Sincronização futura com o RativaPolis: DESATIVADA. Sem rede, sem login. Ao ativar no futuro: enviar só eventos {id único, tipo, valor},
    o servidor ignora ids repetidos (idempotente) e mantém o progresso mais recente. */
 const SYNC={enabled:false,endpoint:null,queue:[],push(){return false},flush(){return false}};
 
