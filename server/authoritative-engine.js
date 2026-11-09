@@ -135,7 +135,7 @@ function checkCollisions(sim, now) {
   for (const p of all) {
     if (!p.alive || p.paused || !p.connected) continue;
     for (const other of all) {
-      if (other === p || !other.alive) continue;
+      if (other === p || !other.alive || other.paused || !other.connected) continue;
       if (distance2(p, other) < (p.radius + other.radius + 3) ** 2) { kill(p, now); break; }
       for (let i = 2; i < other.segments.length; i += 3) {
         const seg = other.segments[i];
