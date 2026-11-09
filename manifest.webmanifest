@@ -1,7 +1,7 @@
 {
-  "name": "Rato Snack",
-  "short_name": "Rato Snack",
-  "description": "Jogo offline de ratinhos: coma queijos, cresça e domine a arena.",
+  "name": "RativaSnack",
+  "short_name": "RativaSnack",
+  "description": "Jogo arcade de sobrevivência RativaSnack: coma queijos, cresça e domine a arena.",
   "start_url": "./",
   "scope": "./",
   "id": "./",
