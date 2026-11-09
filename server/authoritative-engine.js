@@ -6,7 +6,7 @@ const WORLD_W = 3600;
 const WORLD_H = 2400;
 const TICK_MS = 50;
 const SNAPSHOT_MS = 100;
-const MAX_FOOD = 150;
+const MAX_FOOD = 100;
 const MAX_LENGTH = 220;
 
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -27,7 +27,7 @@ function makePlayer(user) {
     paused: false, connected: true, respawnAt: 0, score: 0, kills: 0,
     boostEnergy: 100, magnetUntil: 0, growUntil: 0, segments: [],
     input: { angle, boost: false, paused: false }, lastInputAt: 0,
-    isBot: false
+    isBot: false, turnRate: 6.2
   };
 }
 function makeNpc(i) {
@@ -41,7 +41,7 @@ function createSimulation(mode) {
     mode: String(mode || 'quick'), players: new Map(), npcs: [makeNpc(0), makeNpc(1), makeNpc(2)],
     foods: [], time: 0, scoreTick: 0, lastSnapshot: 0, running: true
   };
-  for (let i = 0; i < 105; i++) sim.foods.push(makeFood());
+  for (let i = 0; i < 85; i++) sim.foods.push(makeFood());
   return sim;
 }
 function addPlayer(sim, user) {
@@ -62,7 +62,7 @@ function setInput(sim, id, input, now) {
   const p = sim.players.get(String(id));
   if (!p || !p.connected || !input || typeof input !== 'object') return false;
   const stamp = now || Date.now();
-  if (stamp - p.lastInputAt < 30) return false;
+  if (stamp - p.lastInputAt < 25) return false;
   const angle = Number(input.a);
   if (Number.isFinite(angle)) p.input.angle = Math.atan2(Math.sin(angle), Math.cos(angle));
   p.input.boost = input.b === 1 || input.b === true;
@@ -76,6 +76,7 @@ function setAppearance(sim, id, appearance) {
   if (typeof appearance.color === 'string' && /^#[0-9a-f]{6}$/i.test(appearance.color)) p.color = appearance.color;
   if (typeof appearance.skin === 'string' && /^[a-z0-9_-]{1,14}$/i.test(appearance.skin)) p.skin = appearance.skin;
   if (typeof appearance.rat === 'string' && /^[a-z0-9_-]{1,20}$/i.test(appearance.rat)) p.rat = appearance.rat;
+  if (Number.isFinite(Number(appearance.turnRate))) p.turnRate = clamp(Number(appearance.turnRate), 4.5, 9);
   return true;
 }
 function moveSnake(p, dt, now) {
@@ -90,7 +91,8 @@ function moveSnake(p, dt, now) {
   }
   if (p.paused || !p.connected) { p.boostActive = false; return; }
   const turn = angleDelta(p.angle, p.input.angle);
-  p.angle += clamp(turn, -5.3 * dt, 5.3 * dt);
+  const turnRate = clamp(Number(p.turnRate) || 6.2, 4.5, 9);
+  p.angle += clamp(turn, -turnRate * dt, turnRate * dt);
   const wantsBoost = p.input.boost && p.boostEnergy > 0;
   p.boostActive = !!wantsBoost;
   if (wantsBoost) p.boostEnergy = Math.max(0, p.boostEnergy - 34 * dt);
@@ -159,16 +161,17 @@ function serialize(p) {
   for (let i = 0; i < p.segments.length; i += step) g.push(Math.round(p.segments[i].x), Math.round(p.segments[i].y));
   return { x: Math.round(p.x), y: Math.round(p.y), a: +p.angle.toFixed(3), pz: !!p.paused, rd: p.alive ? 0 : Math.max(0, p.respawnAt - Date.now()),
     r: p.radius, c: p.color, n: p.nick, l: p.length, al: p.alive ? 1 : 0,
-    sh: +p.shield.toFixed(1), ba: p.boostActive ? 1 : 0, sk: p.skin || 'liso', ac: 'nenhum',
+    sh: +p.shield.toFixed(1), ba: p.boostActive ? 1 : 0, s: p.score, k: p.kills || 0, sk: p.skin || 'liso', ac: 'nenhum',
     ta: 'normal', sp: 0, st: 0, rt: p.rat || 'nenhum', g };
 }
 function snapshotFor(sim, id) {
   const me = sim.players.get(String(id));
   if (!me) return null;
   const others = [...sim.players.values()].filter(p => p.id !== me.id && p.connected && p.alive).concat(sim.npcs.filter(p => p.alive));
+  const nearbyFood = sim.foods.map(f => ({ f, d: distance2(me, f) })).filter(x => x.d < 1100 * 1100).sort((a, b) => a.d - b.d).slice(0, 65).map(x => x.f);
   return { t: 'state', st: 1, ar: 0, gt: +sim.time.toFixed(1), sc: me.score,
     me: serialize(me), o: others.slice(0, 16).map(serialize),
-    f: sim.foods.slice(0, MAX_FOOD).map(f => [Math.round(f.x), Math.round(f.y), f.type, f.r, f.color]) };
+    f: nearbyFood.map(f => [Math.round(f.x), Math.round(f.y), f.type, f.r, f.color]) };
 }
 function tick(sim, dt, now) {
   if (!sim.running) return;
@@ -183,8 +186,11 @@ function tick(sim, dt, now) {
   }
   for (const bot of sim.npcs) {
     if (!bot.alive) { moveSnake(bot, dt, now); continue; }
-    const target = sim.foods.reduce((best, f) => distance2(bot, f) < distance2(bot, best) ? f : best, sim.foods[0] || bot);
-    if (target) bot.input.angle = Math.atan2(target.y - bot.y, target.x - bot.x);
+    if (!bot.aiThinkAt || now - bot.aiThinkAt >= 250 || !bot.aiTarget || !sim.foods.includes(bot.aiTarget)) {
+      bot.aiThinkAt = now;
+      bot.aiTarget = sim.foods.reduce((best, f) => distance2(bot, f) < distance2(bot, best) ? f : best, sim.foods[0] || bot);
+    }
+    if (bot.aiTarget) bot.input.angle = Math.atan2(bot.aiTarget.y - bot.y, bot.aiTarget.x - bot.x);
     moveSnake(bot, dt, now); consume(sim, bot);
   }
   checkCollisions(sim, now);
