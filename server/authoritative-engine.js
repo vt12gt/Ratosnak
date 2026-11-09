@@ -23,7 +23,7 @@ function makePlayer(user) {
   return {
     id: String(user.id), nick: String(user.nick || 'Jogador').slice(0, 16),
     level: Math.max(1, Number(user.level) || 1), x, y, angle, length: 10,
-    radius: 10, color: '#ffffff', alive: true, shield: 3, boostActive: false,
+    radius: 10, color: '#ffffff', skin: 'liso', rat: 'nenhum', alive: true, shield: 3, boostActive: false,
     paused: false, connected: true, respawnAt: 0, score: 0, kills: 0,
     boostEnergy: 100, magnetUntil: 0, growUntil: 0, segments: [],
     input: { angle, boost: false, paused: false }, lastInputAt: 0,
@@ -61,11 +61,21 @@ function disconnectPlayer(sim, id, deliberate) {
 function setInput(sim, id, input, now) {
   const p = sim.players.get(String(id));
   if (!p || !p.connected || !input || typeof input !== 'object') return false;
+  const stamp = now || Date.now();
+  if (stamp - p.lastInputAt < 30) return false;
   const angle = Number(input.a);
   if (Number.isFinite(angle)) p.input.angle = Math.atan2(Math.sin(angle), Math.cos(angle));
   p.input.boost = input.b === 1 || input.b === true;
   p.input.paused = input.p === true;
-  p.lastInputAt = now || Date.now();
+  p.lastInputAt = stamp;
+  return true;
+}
+function setAppearance(sim, id, appearance) {
+  const p = sim.players.get(String(id));
+  if (!p || !appearance || typeof appearance !== 'object') return false;
+  if (typeof appearance.color === 'string' && /^#[0-9a-f]{6}$/i.test(appearance.color)) p.color = appearance.color;
+  if (typeof appearance.skin === 'string' && /^[a-z0-9_-]{1,14}$/i.test(appearance.skin)) p.skin = appearance.skin;
+  if (typeof appearance.rat === 'string' && /^[a-z0-9_-]{1,20}$/i.test(appearance.rat)) p.rat = appearance.rat;
   return true;
 }
 function moveSnake(p, dt, now) {
@@ -141,8 +151,8 @@ function serialize(p) {
   for (let i = 0; i < p.segments.length; i += step) g.push(Math.round(p.segments[i].x), Math.round(p.segments[i].y));
   return { x: Math.round(p.x), y: Math.round(p.y), a: +p.angle.toFixed(3), pz: !!p.paused,
     r: p.radius, c: p.color, n: p.nick, l: p.length, al: p.alive ? 1 : 0,
-    sh: +p.shield.toFixed(1), ba: p.boostActive ? 1 : 0, sk: 'liso', ac: 'nenhum',
-    ta: 'normal', sp: 0, st: 0, rt: 'nenhum', g };
+    sh: +p.shield.toFixed(1), ba: p.boostActive ? 1 : 0, sk: p.skin || 'liso', ac: 'nenhum',
+    ta: 'normal', sp: 0, st: 0, rt: p.rat || 'nenhum', g };
 }
 function snapshotFor(sim, id) {
   const me = sim.players.get(String(id));
@@ -173,4 +183,4 @@ function tick(sim, dt, now) {
   while (sim.foods.length < MAX_FOOD) sim.foods.push(makeFood());
 }
 function stopSimulation(sim) { sim.running = false; }
-module.exports = { WORLD_W, WORLD_H, TICK_MS, SNAPSHOT_MS, createSimulation, addPlayer, disconnectPlayer, setInput, tick, snapshotFor, stopSimulation };
+module.exports = { WORLD_W, WORLD_H, TICK_MS, SNAPSHOT_MS, createSimulation, addPlayer, disconnectPlayer, setInput, setAppearance, tick, snapshotFor, stopSimulation };
