@@ -112,6 +112,11 @@ function extractRatopolisPlayer(data) {
 async function authenticate(token) {
   if (!token || token.length > 4096) return null;
   const result = await upstream('/api/me', 'GET', undefined, token);
+  if (result.status >= 500) {
+    const error = new Error('ratopolis_upstream_temporarily_unavailable');
+    error.upstreamStatus = result.status;
+    throw error;
+  }
   const user = result.status === 200 ? extractRatopolisPlayer(result.data) : null;
   if (!user) {
     console.warn('Ratópolis session rejected for ticket; upstream status:', result.status,
@@ -267,11 +272,20 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/me' && req.method === 'GET') {
       const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
       const result = await upstream('/api/me', 'GET', undefined, token);
+      if (result.status >= 500) {
+        console.error('Ratópolis /api/me temporarily unavailable; upstream status:', result.status,
+          'response keys:', Object.keys(result.data || {}).join(','));
+        return json(res, 503, { error: 'ratopolis_temporariamente_indisponivel' }, origin);
+      }
+      if (result.status === 401 || result.status === 403) {
+        console.warn('Ratópolis session rejected; upstream status:', result.status);
+        return json(res, 401, { error: 'sessao_invalida' }, origin);
+      }
       const user = result.status === 200 ? extractRatopolisPlayer(result.data) : null;
       if (!user) {
-        console.warn('Ratópolis /api/me rejected; upstream status:', result.status,
+        console.error('Ratópolis /api/me returned an invalid response; upstream status:', result.status,
           'response keys:', Object.keys(result.data || {}).join(','));
-        return json(res, 401, { error: 'sessao_invalida' }, origin);
+        return json(res, 502, { error: 'resposta_invalida_do_portal' }, origin);
       }
       return json(res, 200, user, origin);
     }
@@ -299,7 +313,8 @@ const server = http.createServer(async (req, res) => {
     return json(res, 404, { error: 'not_found' }, origin);
   } catch (error) {
     console.error('HTTP error:', error);
-    return json(res, error.message === 'body_too_large' ? 413 : 502, { error: 'upstream_unavailable' }, origin);
+    const status = error.message === 'body_too_large' ? 413 : error.upstreamStatus >= 500 ? 503 : 502;
+    return json(res, status, { error: status === 503 ? 'ratopolis_temporariamente_indisponivel' : 'upstream_unavailable' }, origin);
   }
 });
 
