@@ -5,7 +5,8 @@
   "description": "Servidor Node.js e WebSocket do multiplayer online do Rato Snack",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=20"
