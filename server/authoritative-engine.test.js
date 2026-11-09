@@ -55,9 +55,24 @@ test('pausa congela apenas o jogador e desconexão não apaga a sala', () => {
 test('morte reaparece com 30 por cento do tamanho e escudo', () => {
   const sim = Engine.createSimulation('quick');
   const p = Engine.addPlayer(sim, { id: 'p1', nick: 'Teste' });
+  sim.foods = []; // evita que a comida altere o tamanho no mesmo tick do renascimento
   p.length = 30; p.alive = false; p.respawnAt = 0;
   Engine.tick(sim, .05, Date.now());
   assert.equal(p.alive, true);
   assert.equal(p.length, 9);
   assert.equal(p.shield, 3);
+});
+
+
+test('cobra pausada não causa colisão nos jogadores ativos', () => {
+  const sim = Engine.createSimulation('quick');
+  const paused = Engine.addPlayer(sim, { id: 'paused', nick: 'Pausado' });
+  const active = Engine.addPlayer(sim, { id: 'active', nick: 'Ativo' });
+  paused.x = 1200; paused.y = 1200; paused.paused = true; paused.input.paused = true;
+  active.x = 1200; active.y = 1200; active.shield = 0; active.input.angle = 0;
+  active.lastInputAt = Date.now();
+  sim.foods = [];
+  Engine.tick(sim, .05, Date.now() + 50);
+  assert.equal(paused.alive, true);
+  assert.equal(active.alive, true);
 });
