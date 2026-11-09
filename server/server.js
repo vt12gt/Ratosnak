@@ -122,13 +122,20 @@ async function authenticate(token) {
   return { ...user, token };
 }
 
+const SYSTEM_HOST_ID = 'rativa-system-host';
+const SYSTEM_HOST = Object.freeze({ id: SYSTEM_HOST_ID, nick: 'Anfitrião Rativa', level: 99, online: true, system: true, role: 'host' });
 function roomPlayers(room) {
-  return [...room.players.values()].map(p => ({
-    id: p.id,
-    nick: p.nick,
-    level: p.level || 1,
-    online: !!(p.ws && p.ws.readyState === WebSocket.OPEN)
-  }));
+  return [
+    { ...SYSTEM_HOST },
+    ...[...room.players.values()].map(p => ({
+      id: p.id,
+      nick: p.nick,
+      level: p.level || 1,
+      online: !!(p.ws && p.ws.readyState === WebSocket.OPEN),
+      system: false,
+      role: 'player'
+    }))
+  ];
 }
 function send(ws, message) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
@@ -158,10 +165,14 @@ function destroyRoom(room, notify = true) {
 function createRoom(mode) {
   const room = {
     mode, id: crypto.randomUUID(), players: new Map(),
-    hostId: null, started: false, countdown: null, createdAt: Date.now(),
+    // O anfitrião é uma entidade interna do servidor: não usa WebSocket,
+    // não ocupa vaga e nunca é transferido para um jogador real.
+    hostId: SYSTEM_HOST_ID, systemHost: { ...SYSTEM_HOST, createdAt: Date.now() },
+    started: false, countdown: null, createdAt: Date.now(), idleSince: Date.now(),
     simulation: GameEngine.createSimulation(mode), simTimer: null, lastTickAt: 0, snapshotAt: 0
   };
   rooms.set(room.id, room);
+  console.info('[room] system_host_ready', JSON.stringify({ roomId: room.id, hostId: room.hostId, mode }));
   return room;
 }
 function startRoomSimulation(room) {
@@ -208,9 +219,11 @@ function addPlayer(room, user, ws) {
   player.nick = user.nick; player.level = user.level || 1; player.ws = ws; player.reconnectTimer = null;
   room.players.set(user.id, player);
   roomByUser.set(user.id, room.id);
-  if (!room.hostId) room.hostId = user.id;
+  room.idleSince = null;
+  // O anfitrião virtual permanece fixo; nenhum jogador recebe autoridade de host.
+  room.hostId = SYSTEM_HOST_ID;
   GameEngine.addPlayer(room.simulation, user);
-  send(ws, { t: 'joined', host: null, isHost: false, authoritative: true, mode: room.mode, players: roomPlayers(room) });
+  send(ws, { t: 'joined', host: SYSTEM_HOST_ID, hostNick: SYSTEM_HOST.nick, isHost: false, systemHost: true, authoritative: true, mode: room.mode, players: roomPlayers(room) });
   if (room.started) {
     send(ws, { t: 'start', mode: room.mode, authoritative: true });
     startRoomSimulation(room);
@@ -236,10 +249,21 @@ function removePlayer(room, userId, deliberate = false) {
   room.players.delete(userId);
   roomByUser.delete(userId);
   GameEngine.disconnectPlayer(room.simulation, userId, true);
-  if (userId === room.hostId) room.hostId = room.players.keys().next().value || null;
+  // O host virtual nunca sai. Quando o último jogador real sai, a sala fica
+  // reservada pelo sistema e pronta para receber o próximo jogador.
   if (!room.started && room.players.size < 2) clearCountdown(room);
   roster(room);
-  if (room.players.size === 0) destroyRoom(room, false);
+  if (room.players.size === 0) {
+    if (room.simTimer) clearInterval(room.simTimer);
+    room.simTimer = null;
+    GameEngine.stopSimulation(room.simulation);
+    room.simulation = GameEngine.createSimulation(room.mode);
+    room.started = false;
+    room.lastTickAt = 0;
+    room.snapshotAt = 0;
+    room.idleSince = Date.now();
+    console.info('[room] system_host_kept_idle_room', JSON.stringify({ roomId: room.id, hostId: room.hostId, mode: room.mode }));
+  }
 }
 
 const server = http.createServer(async (req, res) => {
@@ -252,7 +276,12 @@ const server = http.createServer(async (req, res) => {
   const origin = req.headers.origin || '';
   try {
     if (url.pathname === '/health' && req.method === 'GET') {
-      return json(res, 200, { ok: true, service: 'rato-snack-realtime', version: '1.0.0', rooms: rooms.size, onlinePlayers: socketsByUser.size }, origin);
+      return json(res, 200, {
+        ok: true, service: 'rato-snack-realtime', version: '1.1.0-system-host',
+        rooms: rooms.size, onlinePlayers: socketsByUser.size,
+        systemHost: { id: SYSTEM_HOST_ID, nick: SYSTEM_HOST.nick, alwaysPresent: true },
+        idleRooms: [...rooms.values()].filter(room => room.players.size === 0).length
+      }, origin);
     }
     if (url.pathname === '/api/login' && req.method === 'POST') {
       const body = await readBody(req);
@@ -396,7 +425,7 @@ wss.on('connection', (ws, req, user) => {
     if (m.t === 'leave' || (m.t === 'ctl' && m.k === 'end')) {
       const leavingRoomId = room.id;
       const leavingMode = room.mode;
-      const wasHost = room.hostId === user.id;
+      const wasHost = false; // O anfitrião permanente é interno ao servidor.
       removePlayer(room, user.id, true);
       console.info('[room] player_leave_ack', JSON.stringify({ userId: user.id, roomId: leavingRoomId, mode: leavingMode, wasHost, command: m.t === 'leave' ? 'leave' : 'end' }));
       send(ws, { t: 'left', roomId: leavingRoomId });
