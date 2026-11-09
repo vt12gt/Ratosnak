@@ -5,7 +5,7 @@
 const WORLD_W = 3600;
 const WORLD_H = 2400;
 const TICK_MS = 50;
-const SNAPSHOT_MS = 100;
+const SNAPSHOT_MS = 150;
 const MAX_FOOD = 100;
 const MAX_LENGTH = 220;
 
@@ -169,7 +169,7 @@ function snapshotFor(sim, id) {
   const me = sim.players.get(String(id));
   if (!me) return null;
   const others = [...sim.players.values()].filter(p => p.id !== me.id && p.connected && p.alive).concat(sim.npcs.filter(p => p.alive));
-  const nearbyFood = sim.foods.map(f => ({ f, d: distance2(me, f) })).filter(x => x.d < 1100 * 1100).sort((a, b) => a.d - b.d).slice(0, 65).map(x => x.f);
+  const nearbyFood = sim.foods.map(f => ({ f, d: distance2(me, f) })).filter(x => x.d < 900 * 900).sort((a, b) => a.d - b.d).slice(0, 40).map(x => x.f);
   return { t: 'state', st: 1, ar: 0, gt: +sim.time.toFixed(1), sc: me.score,
     me: serialize(me), o: others.slice(0, 16).map(serialize),
     f: nearbyFood.map(f => [Math.round(f.x), Math.round(f.y), f.type, f.r, f.color]) };
