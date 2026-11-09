@@ -177,7 +177,8 @@ function startCountdown(room) {
     room.countdown = null;
     if (!rooms.has(room.id) || room.players.size < 2) return;
     room.started = true;
-    broadcast(room, { t: 'start', mode: room.mode });
+    startRoomSimulation(room);
+    broadcast(room, { t: 'start', mode: room.mode, authoritative: true });
   }, COUNTDOWN_MS);
   broadcast(room, { t: 'countdown', ms: COUNTDOWN_MS, mode: room.mode });
 }
@@ -364,6 +365,7 @@ wss.on('connection', (ws, req, user) => {
       // A solo player starts immediately with local AI bots; later real players join this live room.
       room.started = true;
       addPlayer(room, user, ws);
+      startRoomSimulation(room);
       return;
     }
     if (!room || !room.players.has(user.id)) return;
@@ -377,16 +379,13 @@ wss.on('connection', (ws, req, user) => {
       send(ws, { t: 'left', roomId: leavingRoomId });
       return;
     }
-    if (m.t === 'in') {
-      const host = room.players.get(room.hostId);
-      if (host && host.ws) send(host.ws, { t: 'in', from: user.id, d: String(m.d || '').slice(0, 60000) });
+    if (m.t === 'input') {
+      // Só direção, boost e pausa entram pela rede. Posição, tamanho e pontuação não vêm do cliente.
+      GameEngine.setInput(room.simulation, user.id, m, Date.now());
       return;
     }
-    if (m.t === 'st') {
-      const target = room.players.get(String(m.to || ''));
-      if (target && target.ws) send(target.ws, { t: 'st', d: String(m.d || '').slice(0, 60000) });
-      return;
-    }
+    // Retransmissão WebRTC antiga desativada no Online autoritativo.
+    if (m.t === 'in' || m.t === 'st') return;
   });
 
   ws.on('close', () => {
