@@ -403,6 +403,10 @@ wss.on('connection', (ws, req, user) => {
       GameEngine.setInput(room.simulation, user.id, m, Date.now());
       return;
     }
+    if (m.t === 'appearance') {
+      GameEngine.setAppearance(room.simulation, user.id, m);
+      return;
+    }
     // Retransmissão WebRTC antiga desativada no Online autoritativo.
     if (m.t === 'in' || m.t === 'st') return;
   });
