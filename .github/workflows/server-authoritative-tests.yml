@@ -1,7 +1,7 @@
 name: RativaSnack authoritative tests
 on:
   push:
-    branches: [test/server-authoritative]
+    branches: [test/server-authoritative, test/permanent-system-host]
     paths:
       - 'server/**'
       - '.github/workflows/server-authoritative-tests.yml'
