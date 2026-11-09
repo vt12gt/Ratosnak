@@ -213,7 +213,7 @@ function startCountdown(room) {
 function addPlayer(room, user, ws) {
   const old = room.players.get(user.id);
   if (old && old.reconnectTimer) clearTimeout(old.reconnectTimer);
-  const player = old || { id: user.id, nick: user.nick, level: user.level || 1, ws: null, reconnectTimer: null, slot: room.players.size };
+  const player = old || { id: user.id, nick: user.nick, level: user.level || 1, ws: null, reconnectTimer: null, slot: room.players.size, matchId: crypto.randomUUID(), matchStartedAt: Date.now(), recordSaved: false };
   player.nick = user.nick; player.level = user.level || 1; player.ws = ws; player.reconnectTimer = null;
   room.players.set(user.id, player);
   roomByUser.set(user.id, room.id);
@@ -230,6 +230,41 @@ function addPlayer(room, user, ws) {
   }
   roster(room);
 }
+function persistMatchResult(room, player) {
+  if (!player || player.recordSaved) return;
+  player.recordSaved = true;
+  const simPlayer = room.simulation && room.simulation.players.get(player.id);
+  if (!simPlayer) return;
+  const durationMs = Math.max(0, Date.now() - Number(player.matchStartedAt || Date.now()));
+  const score = Math.max(0, Math.floor(Number(simPlayer.score) || 0));
+  if (durationMs < 10000 || score <= 0) return;
+  const secret = process.env.RATIVASNACK_SERVER_KEY;
+  if (!secret) {
+    console.warn('[ranking] server_key_missing; authoritative score not submitted', player.id);
+    return;
+  }
+  const payload = {
+    portal_user_id: player.id,
+    match_id: player.matchId,
+    score,
+    duration_ms: durationMs,
+    kills: Math.max(0, Math.floor(Number(simPlayer.kills) || 0)),
+    food: Math.max(0, Math.floor(Number(simPlayer.foodEaten) || 0)),
+    reason: 'player_exit'
+  };
+  fetch(RATO_SNACK_API_URL + '/api/rato-snack/internal/authoritative-record', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Rativa-Server-Key': secret },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(10000)
+  }).then(async response => {
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) throw new Error(data.error || 'HTTP ' + response.status);
+    console.info('[ranking] authoritative_record_saved', JSON.stringify({ userId: player.id, score, inserted: !!data.inserted }));
+  }).catch(error => {
+    console.error('[ranking] authoritative_record_failed', JSON.stringify({ userId: player.id, message: error.message }));
+  });
+}
 function removePlayer(room, userId, deliberate = false) {
   const p = room.players.get(userId);
   if (!p) return;
@@ -244,6 +279,7 @@ function removePlayer(room, userId, deliberate = false) {
     roster(room);
     return;
   }
+  persistMatchResult(room, p);
   room.players.delete(userId);
   roomByUser.delete(userId);
   GameEngine.disconnectPlayer(room.simulation, userId, true);
