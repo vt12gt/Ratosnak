@@ -76,3 +76,28 @@ test('cobra pausada não causa colisão nos jogadores ativos', () => {
   assert.equal(paused.alive, true);
   assert.equal(active.alive, true);
 });
+
+
+test('bater na parede elimina mesmo durante escudo', () => {
+  const sim = Engine.createSimulation('quick');
+  const p = Engine.addPlayer(sim, { id: 'wall', nick: 'Parede' });
+  p.x = Engine.WORLD_W - 12; p.y = 1200; p.angle = 0; p.input.angle = 0; p.shield = 3;
+  p.lastInputAt = Date.now();
+  Engine.tick(sim, .08, Date.now() + 80);
+  assert.equal(p.alive, false);
+  assert.ok(p.respawnAt > Date.now());
+  const snap = Engine.snapshotFor(sim, 'wall');
+  assert.ok(snap.me.rd > 0);
+});
+
+test('renascimento aguarda três segundos e publica contagem restante', () => {
+  const sim = Engine.createSimulation('quick');
+  const p = Engine.addPlayer(sim, { id: 'timer', nick: 'Contagem' });
+  p.alive = false; p.respawnAt = Date.now() + 3000; p.length = 20;
+  const snap = Engine.snapshotFor(sim, 'timer');
+  assert.ok(snap.me.rd > 0 && snap.me.rd <= 3000);
+  Engine.tick(sim, .05, p.respawnAt - 1);
+  assert.equal(p.alive, false);
+  Engine.tick(sim, .05, p.respawnAt + 1);
+  assert.equal(p.alive, true);
+});
