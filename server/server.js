@@ -7,6 +7,7 @@ const { WebSocketServer, WebSocket } = require('ws');
 const PORT = Number(process.env.PORT || 8787);
 const RATOPOLIS_API_URL = String(process.env.RATOPOLIS_API_URL || 'https://ratopolis-api-dev-v30.juniorgmj69.workers.dev').replace(/\/+$/, '');
 const RATO_SNACK_API_URL = String(process.env.RATO_SNACK_API_URL || 'https://rato-snack-api-dev.juniorgmj69.workers.dev').replace(/\/+$/, '');
+const UPSTREAM_TIMEOUT_MS = Math.max(3000, Math.min(20000, Number(process.env.UPSTREAM_TIMEOUT_MS) || 8000));
 const ALLOWED_ORIGINS = new Set([
   'https://vt12gt.github.io',
   'https://ratopolis-cadastro-teste.pages.dev',
@@ -64,7 +65,7 @@ async function upstream(path, method, body, token) {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(12000)
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
   });
   let data = {};
   try { data = await response.json(); } catch (_) {}
@@ -79,7 +80,7 @@ async function snackUpstream(path, method, body, token) {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(12000)
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
   });
   const raw = await response.text();
   let data;
@@ -313,8 +314,10 @@ const server = http.createServer(async (req, res) => {
     return json(res, 404, { error: 'not_found' }, origin);
   } catch (error) {
     console.error('HTTP error:', error);
-    const status = error.message === 'body_too_large' ? 413 : error.upstreamStatus >= 500 ? 503 : 502;
-    return json(res, status, { error: status === 503 ? 'ratopolis_temporariamente_indisponivel' : 'upstream_unavailable' }, origin);
+    const timedOut = error && error.name === 'TimeoutError';
+    const status = error.message === 'body_too_large' ? 413 : timedOut ? 504 : error.upstreamStatus >= 500 ? 503 : 502;
+    const code = status === 504 ? 'upstream_timeout' : status === 503 ? 'ratopolis_temporariamente_indisponivel' : 'upstream_unavailable';
+    return json(res, status, { error: code }, origin);
   }
 });
 
