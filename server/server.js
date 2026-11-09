@@ -231,8 +231,7 @@ function addPlayer(room, user, ws) {
   roster(room);
 }
 function persistMatchResult(room, player) {
-  if (!player || player.recordSaved) return;
-  player.recordSaved = true;
+  if (!player || player.recordSaved || player.recordPending) return;
   const simPlayer = room.simulation && room.simulation.players.get(player.id);
   if (!simPlayer) return;
   const durationMs = Math.max(0, Date.now() - Number(player.matchStartedAt || Date.now()));
@@ -252,18 +251,32 @@ function persistMatchResult(room, player) {
     food: Math.max(0, Math.floor(Number(simPlayer.foodEaten) || 0)),
     reason: 'player_exit'
   };
-  fetch(RATO_SNACK_API_URL + '/api/rato-snack/internal/authoritative-record', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Rativa-Server-Key': secret },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(10000)
-  }).then(async response => {
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.ok) throw new Error(data.error || 'HTTP ' + response.status);
-    console.info('[ranking] authoritative_record_saved', JSON.stringify({ userId: player.id, score, inserted: !!data.inserted }));
-  }).catch(error => {
-    console.error('[ranking] authoritative_record_failed', JSON.stringify({ userId: player.id, message: error.message }));
-  });
+  player.recordPending = true;
+  const submit = async () => {
+    let lastError = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const response = await fetch(RATO_SNACK_API_URL + '/api/rato-snack/internal/authoritative-record', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Rativa-Server-Key': secret },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(10000)
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) throw new Error(data.error || 'HTTP ' + response.status);
+        player.recordSaved = true;
+        player.recordPending = false;
+        console.info('[ranking] authoritative_record_saved', JSON.stringify({ userId: player.id, score, inserted: !!data.inserted }));
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+      }
+    }
+    player.recordPending = false;
+    console.error('[ranking] authoritative_record_failed', JSON.stringify({ userId: player.id, message: lastError && lastError.message }));
+  };
+  void submit();
 }
 function removePlayer(room, userId, deliberate = false) {
   const p = room.players.get(userId);
