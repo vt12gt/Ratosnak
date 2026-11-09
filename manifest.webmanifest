@@ -2,9 +2,9 @@
   "name": "Rato Snack",
   "short_name": "Rato Snack",
   "description": "Jogo offline de ratinhos: coma queijos, cresça e domine a arena.",
-  "start_url": "./Index.html",
+  "start_url": "./",
   "scope": "./",
-  "id": "./Index.html",
+  "id": "./",
   "display": "fullscreen",
   "display_override": [
     "fullscreen",
