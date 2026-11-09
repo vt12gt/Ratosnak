@@ -3,6 +3,7 @@
 const http = require('node:http');
 const { URL } = require('node:url');
 const { WebSocketServer, WebSocket } = require('ws');
+const GameEngine = require('./authoritative-engine');
 
 const PORT = Number(process.env.PORT || 8787);
 const RATOPOLIS_API_URL = String(process.env.RATOPOLIS_API_URL || 'https://ratopolis-api-dev-v30.juniorgmj69.workers.dev').replace(/\/+$/, '');
@@ -145,6 +146,8 @@ function clearCountdown(room) {
 }
 function destroyRoom(room, notify = true) {
   clearCountdown(room);
+  if (room.simTimer) clearInterval(room.simTimer);
+  if (room.simulation) GameEngine.stopSimulation(room.simulation);
   rooms.delete(room.id);
   for (const p of room.players.values()) {
     roomByUser.delete(p.id);
@@ -154,16 +157,32 @@ function destroyRoom(room, notify = true) {
 }
 function createRoom(mode) {
   const room = {
-    mode,
-    id: crypto.randomUUID(),
-    players: new Map(),
-    hostId: null,
-    started: false,
-    countdown: null,
-    createdAt: Date.now()
+    mode, id: crypto.randomUUID(), players: new Map(),
+    hostId: null, started: false, countdown: null, createdAt: Date.now(),
+    simulation: GameEngine.createSimulation(mode), simTimer: null, lastTickAt: 0, snapshotAt: 0
   };
   rooms.set(room.id, room);
   return room;
+}
+function startRoomSimulation(room) {
+  if (room.simTimer) return;
+  room.lastTickAt = Date.now();
+  room.snapshotAt = 0;
+  room.simTimer = setInterval(() => {
+    if (!rooms.has(room.id) || !room.started) return;
+    const now = Date.now();
+    const dt = Math.min(.08, Math.max(.01, (now - room.lastTickAt) / 1000));
+    room.lastTickAt = now;
+    GameEngine.tick(room.simulation, dt, now);
+    if (now - room.snapshotAt < GameEngine.SNAPSHOT_MS) return;
+    room.snapshotAt = now;
+    for (const p of room.players.values()) {
+      if (!p.ws || p.ws.readyState !== WebSocket.OPEN) continue;
+      const state = GameEngine.snapshotFor(room.simulation, p.id);
+      if (state) send(p.ws, state);
+    }
+  }, GameEngine.TICK_MS);
+  if (typeof room.simTimer.unref === 'function') room.simTimer.unref();
 }
 function firstAvailableRoom(mode) {
   for (const room of rooms.values()) {
