@@ -377,9 +377,13 @@ wss.on('connection', (ws, req, user) => {
         addPlayer(room, user, ws);
         return;
       }
-      const allowedModes = new Set(['quick','survival','challenge','team','boss','infinite','daily','treino','mundial']);
+      const allowedModes = new Set(['quick']);
       const requestedMode = String(m.mode || 'quick');
-      const selectedMode = allowedModes.has(requestedMode) ? requestedMode : 'quick';
+      if (!allowedModes.has(requestedMode)) {
+        send(ws, { t: 'mode_unsupported', mode: requestedMode, supported: ['quick'] });
+        return;
+      }
+      const selectedMode = requestedMode;
       room = firstAvailableRoom(selectedMode);
       // A solo player starts immediately with local AI bots; later real players join this live room.
       room.started = true;
