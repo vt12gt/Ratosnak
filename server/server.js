@@ -333,6 +333,20 @@ wss.on('connection', (ws, req, user) => {
   }
   socketsByUser.set(user.id, ws);
   ws.user = user;
+  // Revalida a sessão central periodicamente: logout no portal também derruba o multiplayer.
+  const sessionCheck = setInterval(async () => {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    try {
+      const current = await authenticate(user.token);
+      if (!current || current.id !== user.id) {
+        ws.close(4003, 'central_session_expired');
+      }
+    } catch (error) {
+      // Falha temporária da API central não encerra partidas de jogadores autenticados.
+      console.warn('Session revalidation temporarily unavailable:', error.message);
+    }
+  }, 60000);
+  if (typeof sessionCheck.unref === 'function') sessionCheck.unref();
   send(ws, { t: 'hello' });
 
   const existingRoomId = roomByUser.get(user.id);
@@ -380,6 +394,7 @@ wss.on('connection', (ws, req, user) => {
   });
 
   ws.on('close', () => {
+    clearInterval(sessionCheck);
     if (socketsByUser.get(user.id) === ws) socketsByUser.delete(user.id);
     const id = roomByUser.get(user.id);
     const room = id && rooms.get(id);
