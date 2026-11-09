@@ -4,6 +4,7 @@ const http = require('node:http');
 const { URL } = require('node:url');
 const { WebSocketServer, WebSocket } = require('ws');
 const GameEngine = require('./authoritative-engine');
+const SystemHost = require('./system-host');
 
 const PORT = Number(process.env.PORT || 8787);
 const RATOPOLIS_API_URL = String(process.env.RATOPOLIS_API_URL || 'https://ratopolis-api-dev-v30.juniorgmj69.workers.dev').replace(/\/+$/, '');
@@ -122,20 +123,16 @@ async function authenticate(token) {
   return { ...user, token };
 }
 
-const SYSTEM_HOST_ID = 'rativa-system-host';
-const SYSTEM_HOST = Object.freeze({ id: SYSTEM_HOST_ID, nick: 'Anfitrião Rativa', level: 99, online: true, system: true, role: 'host' });
 function roomPlayers(room) {
-  return [
-    { ...SYSTEM_HOST },
-    ...[...room.players.values()].map(p => ({
-      id: p.id,
-      nick: p.nick,
-      level: p.level || 1,
-      online: !!(p.ws && p.ws.readyState === WebSocket.OPEN),
-      system: false,
-      role: 'player'
-    }))
-  ];
+  const realPlayers = [...room.players.values()].map(p => ({
+    id: p.id,
+    nick: p.nick,
+    level: p.level || 1,
+    online: !!(p.ws && p.ws.readyState === WebSocket.OPEN),
+    system: false,
+    role: 'player'
+  }));
+  return SystemHost.roster(room, realPlayers);
 }
 function send(ws, message) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
@@ -167,10 +164,11 @@ function createRoom(mode) {
     mode, id: crypto.randomUUID(), players: new Map(),
     // O anfitrião é uma entidade interna do servidor: não usa WebSocket,
     // não ocupa vaga e nunca é transferido para um jogador real.
-    hostId: SYSTEM_HOST_ID, systemHost: { ...SYSTEM_HOST, createdAt: Date.now() },
+    hostId: SystemHost.ID, systemHost: null,
     started: false, countdown: null, createdAt: Date.now(), idleSince: Date.now(),
     simulation: GameEngine.createSimulation(mode), simTimer: null, lastTickAt: 0, snapshotAt: 0
   };
+  SystemHost.attach(room);
   rooms.set(room.id, room);
   console.info('[room] system_host_ready', JSON.stringify({ roomId: room.id, hostId: room.hostId, mode }));
   return room;
@@ -221,9 +219,9 @@ function addPlayer(room, user, ws) {
   roomByUser.set(user.id, room.id);
   room.idleSince = null;
   // O anfitrião virtual permanece fixo; nenhum jogador recebe autoridade de host.
-  room.hostId = SYSTEM_HOST_ID;
+  room.hostId = SystemHost.ID;
   GameEngine.addPlayer(room.simulation, user);
-  send(ws, { t: 'joined', host: SYSTEM_HOST_ID, hostNick: SYSTEM_HOST.nick, isHost: false, systemHost: true, authoritative: true, mode: room.mode, players: roomPlayers(room) });
+  send(ws, { t: 'joined', host: SystemHost.ID, hostNick: SystemHost.PROFILE.nick, isHost: false, systemHost: true, authoritative: true, mode: room.mode, players: roomPlayers(room) });
   if (room.started) {
     send(ws, { t: 'start', mode: room.mode, authoritative: true });
     startRoomSimulation(room);
@@ -254,14 +252,7 @@ function removePlayer(room, userId, deliberate = false) {
   if (!room.started && room.players.size < 2) clearCountdown(room);
   roster(room);
   if (room.players.size === 0) {
-    if (room.simTimer) clearInterval(room.simTimer);
-    room.simTimer = null;
-    GameEngine.stopSimulation(room.simulation);
-    room.simulation = GameEngine.createSimulation(room.mode);
-    room.started = false;
-    room.lastTickAt = 0;
-    room.snapshotAt = 0;
-    room.idleSince = Date.now();
+    SystemHost.resetIdleRoom(room, GameEngine);
     console.info('[room] system_host_kept_idle_room', JSON.stringify({ roomId: room.id, hostId: room.hostId, mode: room.mode }));
   }
 }
@@ -279,7 +270,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         ok: true, service: 'rato-snack-realtime', version: '1.1.0-system-host',
         rooms: rooms.size, onlinePlayers: socketsByUser.size,
-        systemHost: { id: SYSTEM_HOST_ID, nick: SYSTEM_HOST.nick, alwaysPresent: true },
+        systemHost: { id: SystemHost.ID, nick: SystemHost.PROFILE.nick, alwaysPresent: true },
         idleRooms: [...rooms.values()].filter(room => room.players.size === 0).length
       }, origin);
     }
