@@ -382,7 +382,12 @@ wss.on('connection', (ws, req, user) => {
     if (!room || !room.players.has(user.id)) return;
 
     if (m.t === 'leave' || (m.t === 'ctl' && m.k === 'end')) {
+      const leavingRoomId = room.id;
+      const leavingMode = room.mode;
+      const wasHost = room.hostId === user.id;
       removePlayer(room, user.id, true);
+      console.info('[room] player_leave_ack', JSON.stringify({ userId: user.id, roomId: leavingRoomId, mode: leavingMode, wasHost, command: m.t === 'leave' ? 'leave' : 'end' }));
+      send(ws, { t: 'left', roomId: leavingRoomId });
       return;
     }
     if (m.t === 'in') {
@@ -404,7 +409,10 @@ wss.on('connection', (ws, req, user) => {
     const room = id && rooms.get(id);
     if (room) {
       const p = room.players.get(user.id);
-      if (p && p.ws === ws) removePlayer(room, user.id, false);
+      if (p && p.ws === ws) {
+        console.info('[room] socket_disconnected', JSON.stringify({ userId: user.id, roomId: room.id, mode: room.mode, reconnectGraceMs: RECONNECT_GRACE_MS }));
+        removePlayer(room, user.id, false);
+      }
     }
   });
   ws.on('error', error => console.error('WebSocket error:', error.message));
