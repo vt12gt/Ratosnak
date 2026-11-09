@@ -4,19 +4,19 @@
 <link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#4a2f9f">
-<meta name="description" content="Jogue Rato Snack (RatoSnake), um jogo de cobrinha multiplayer online. Controle seu rato, colete queijo, cresça e dispute partidas com outros jogadores.">
+<meta name="description" content="Jogue RativaSnack, um jogo de cobrinha multiplayer online. Controle seu rato, colete queijo, cresça e dispute partidas com outros jogadores.">
 <meta name="robots" content="index,follow,max-image-preview:large">
 <link rel="canonical" href="https://vt12gt.github.io/Ratosnak/Index.html">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Ratópolis">
-<meta property="og:title" content="Rato Snack (RatoSnake) — Jogo de Cobrinha Multiplayer">
-<meta property="og:description" content="Entre no Rato Snack, colete queijo, cresça e jogue online com outros participantes.">
+<meta property="og:title" content="RativaSnack — Jogo de Cobrinha Multiplayer">
+<meta property="og:description" content="Entre no RativaSnack, colete queijo, cresça e jogue online com outros participantes.">
 <meta property="og:url" content="https://vt12gt.github.io/Ratosnak/Index.html">
 <meta property="og:image" content="https://vt12gt.github.io/Ratosnak/icon-512.png">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="Rato Snack (RatoSnake) — Jogo Multiplayer">
+<meta name="twitter:title" content="RativaSnack — Jogo Multiplayer">
 <meta name="twitter:description" content="Jogo de cobrinha online com ratinhos, queijo e partidas multiplayer.">
-<title>Rato Snack (RatoSnake) — Jogo de Cobrinha Multiplayer</title>
+<title>RativaSnack — Jogo de Cobrinha Multiplayer</title>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#1c1129;color:#ffffff;font-family:system-ui,sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}#game{position:relative;width:100vw;height:100dvh;overflow:hidden}canvas{position:absolute;inset:0;touch-action:none;width:100%;height:100%;display:block}
 .hud{position:absolute;inset:0;padding:calc(env(safe-area-inset-top) + 9px) 12px calc(env(safe-area-inset-bottom) + 10px);pointer-events:none}.top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}.brand{font-weight:1000;font-size:clamp(18px,3.3vw,29px);letter-spacing:-.4px}.brand span,h1 span{color:#ffd34e}
@@ -324,8 +324,8 @@ button.who{border:0;color:#fff;font-family:inherit;font-style:italic;font-weight
 {
   "@context": "https://schema.org",
   "@type": "VideoGame",
-  "name": "Rato Snack",
-  "alternateName": "RatoSnake",
+  "name": "RativaSnack",
+  "alternateName": "RativaSnack",
   "url": "https://vt12gt.github.io/Ratosnak/Index.html",
   "description": "Jogo de cobrinha multiplayer online com ratinhos, coleta de queijo e partidas no navegador.",
   "inLanguage": "pt-BR",
@@ -349,7 +349,7 @@ button.who{border:0;color:#fff;font-family:inherit;font-style:italic;font-weight
  <button class="b3d gear" data-sheet="season" aria-label="Temporada">📅</button>
   <button class="b3d gear" data-sheet="mp" aria-label="Sala multiplayer">📶</button>
   <button class="b3d gear" data-sheet="settings" aria-label="Ajustes">⚙️</button>
- <button class="who" id="whoBtn" aria-label="Apelido"><span class="av">🐭</span><span class="wn"><small>RATO SNACK ✎</small><b id="nickMenu"></b></span></button>
+ <button class="who" id="whoBtn" aria-label="Apelido"><span class="av">🐭</span><span class="wn"><small>RATIVASNACK ✎</small><b id="nickMenu"></b></span></button>
  <div class="bestp"><span class="pod"><i>2</i><i>1</i><i>3</i></span><div><small>MELHOR PONTUAÇÃO</small><b id="bestN">0</b></div></div>
  <button class="b3d gold evtchip" data-sheet="events"><span id="evtI">🌟</span><b id="evtT"></b><i id="evtDot" class="dot hidden"></i></button><span class="grow"></span>
  <button class="coinp" data-sheet="shop" aria-label="Loja"><span class="coin">🧀</span><b id="coinN">0</b><em>+</em></button>
@@ -394,7 +394,7 @@ button.who{border:0;color:#fff;font-family:inherit;font-style:italic;font-weight
 <button id="boost" class="hidden" aria-label="Impulso"><span>⚡</span></button>
 <div id="lb" class="hidden"></div>
 <canvas id="mm" class="hidden" width="96" height="64"></canvas>
-<div id="rotate"><div>📱↔️ Coloque o celular na horizontal<small>O Rato Snack foi feito para jogar com a tela deitada.</small></div></div></div>
+<div id="rotate"><div>📱↔️ Coloque o celular na horizontal<small>O RativaSnack foi feito para jogar com a tela deitada.</small></div></div></div>
 <script>
 (()=>{'use strict';
 const $=id=>document.getElementById(id),canvas=$('canvas');let ctx=canvas.getContext('2d');
@@ -623,7 +623,7 @@ function countRound(kind){if(mode==='treino'||mpOnline)return;if(roundCounted||!
  if(bossNotes.length){for(const n of bossNotes)notes.push(n);bossNotes.length=0}prog.bestStreak=Math.max(prog.bestStreak,matchStreak);prog.specials+=specialKills;if(kind==='win')prog.wins++;
  if(evtOf().id==='ouro'||evtOf().id==='sobrev')gain=Math.round(gain*1.5);addXp(gain);gain+=checkAch(notes);const after=lvlInfo(prog.xp).l;if(after>before)notes.push('⬆️ Nível '+after+'!');
  earn(Math.min(25,Math.floor(gameTime/20)+(score>=50?2:0)),'participação');const ch=settleEarn();prog.bestFood=Math.max(prog.bestFood,foodEaten);prog.bestCheese=Math.max(prog.bestCheese,ch);if(score>0){prog.top.push({s:score,m:mode,d:today()});prog.top.sort((a,b)=>b.s-a.s);prog.top.length=Math.min(5,prog.top.length)}saveProg();lastGain={xp:gain,notes,cheese:ch}}
-function menuProg(){ensureDay();const L=lvlInfo(prog.xp);$('lvlT').textContent=L.max?`Nível ${L.l} • MÁXIMO 👑 • 🧀 ${eco.cheese}`:`Nível ${L.l} • ${L.cur}/${L.need} XP • 🧀 ${eco.cheese}`;$('lvlB').style.width=(L.max?100:Math.round(L.cur/L.need*100))+'%';$('daily').classList.toggle('hidden',!dailyAvail());$('evtT').textContent=evtOf().n;$('evtI').textContent=evtOf().i;$('evtDot').classList.toggle('hidden',evtState().d===1);{const T=bestTitle();$('nickMenu').textContent=(prefs.nick||'Jogador')+(T?' • '+T.i+' '+T.n:'');$('nickHud').textContent=(prefs.nick||'Rato Snack')+(T?' '+T.i:'')}}
+function menuProg(){ensureDay();const L=lvlInfo(prog.xp);$('lvlT').textContent=L.max?`Nível ${L.l} • MÁXIMO 👑 • 🧀 ${eco.cheese}`:`Nível ${L.l} • ${L.cur}/${L.need} XP • 🧀 ${eco.cheese}`;$('lvlB').style.width=(L.max?100:Math.round(L.cur/L.need*100))+'%';$('daily').classList.toggle('hidden',!dailyAvail());$('evtT').textContent=evtOf().n;$('evtI').textContent=evtOf().i;$('evtDot').classList.toggle('hidden',evtState().d===1);{const T=bestTitle();$('nickMenu').textContent=(prefs.nick||'Jogador')+(T?' • '+T.i+' '+T.n:'');$('nickHud').textContent=(prefs.nick||'RativaSnack')+(T?' '+T.i:'')}}
 const evtOf=()=>DEVT[today()%DEVT.length];
 function evtState(){const t=today();if(!prog.dev||prog.dev.day!==t)prog.dev={day:t,p:0,d:0};return prog.dev}
 const evtScale=()=>['chuva','ouro','veloz'].includes(evtOf().id)?.45:1;
@@ -988,7 +988,7 @@ function onlineHostRespawn(){let x=0,y=0,t=0;do{x=rand(B.x0+260,B.x1-260);y=rand
 const olIn=(id,ph,t)=>`<input id="${id}" type="${t||'text'}" placeholder="${ph}" autocomplete="off" autocapitalize="off" style="width:100%;margin-top:6px;padding:8px;border-radius:8px;border:1px solid #7f5fd0;background:#1b1140;color:#fff;font-size:14px;box-sizing:border-box">`,olBack=mpB('Voltar','mpHome()','background:#5b2f48;color:#fff'),olVal=id=>{const e=mpEl(id);return e?String(e.value||'').trim():''};
 function olMsgSet(t){const e=mpEl('olMsg');if(e)e.textContent=t}
 function olHome(){olLoad();ol.view=false;
- if(!ol.url)mpBox(`<b>🌐 Multiplayer Online</b><p>Informe o endereço do servidor do Rato Snack:</p>${olIn('olU','https://seu-servidor.com')}${mpB('Salvar','olSetUrl()')}${olBack}<p id="olMsg"></p>`);
+ if(!ol.url)mpBox(`<b>🌐 Multiplayer Online</b><p>Informe o endereço do servidor do RativaSnack:</p>${olIn('olU','https://seu-servidor.com')}${mpB('Salvar','olSetUrl()')}${olBack}<p id="olMsg"></p>`);
  else if(!ol.token)mpBox(`<b>🌐 Entrar na conta</b><br><small>Servidor: ${olEsc(ol.url)}</small>${olIn('olL','Login (minúsculas)')}${olIn('olP','Senha','password')}${olIn('olN','NickName (só para criar conta)')}${mpB('Entrar','olDoLogin()')}${mpB('Criar conta','olDoReg()')}${mpB('Trocar servidor','olSetUrl()','background:#7f5fd0;color:#fff')}${olBack}<p id="olMsg"></p>`);
  else mpBox(`<b>🌐 ${olEsc(ol.nick)}</b><br><small>ID: ${olEsc(ol.id)}</small>${mpB('▶ Jogar online','olDoPlay()')}${mpB('Sair da conta','olDoLogout()','background:#7f5fd0;color:#fff')}${olBack}<p id="olMsg"></p>`)}
 function olSetUrl(){const e=mpEl('olU');if(!e){ol.url='';olSave();return olHome()}const u=olVal('olU');if(!/^(https?|wss?):\/\/[^\s]+$/i.test(u)){olMsgSet('Endereço inválido. Use http(s):// ou ws(s)://');return}ol.url=u;olSave();olHome()}
