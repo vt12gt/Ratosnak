@@ -23,7 +23,7 @@ function makePlayer(user) {
   return {
     id: String(user.id), nick: String(user.nick || 'Jogador').slice(0, 16),
     level: Math.max(1, Number(user.level) || 1), x, y, angle, length: 10,
-    radius: 10, color: '#ffffff', skin: 'liso', rat: 'nenhum', alive: true, shield: 3, boostActive: false,
+    radius: 10, color: '#ffffff', skin: 'liso', rat: 'nenhum', alive: true, shield: 3, boostActive: false, foodEaten: 0,
     paused: false, connected: true, respawnAt: 0, score: 0, kills: 0,
     boostEnergy: 100, magnetUntil: 0, growUntil: 0, segments: [],
     input: { angle, boost: false, paused: false }, lastInputAt: 0,
@@ -134,6 +134,7 @@ function consume(sim, p) {
     p.length = Math.min(MAX_LENGTH, p.length + grow);
     const points = f.type === 1 ? 50 : f.type === 7 ? 100 : 10;
     p.score += points;
+    p.foodEaten = (p.foodEaten || 0) + 1;
     if (f.type === 2) p.boostEnergy = Math.min(100, p.boostEnergy + 45);
     if (f.type === 3) p.growUntil = Date.now() + 6000;
     if (f.type === 5) p.shield = Math.max(p.shield, 4);
