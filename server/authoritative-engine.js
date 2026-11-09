@@ -148,7 +148,7 @@ function snapshotFor(sim, id) {
   const me = sim.players.get(String(id));
   if (!me) return null;
   const others = [...sim.players.values()].filter(p => p.id !== me.id && p.connected && p.alive).concat(sim.npcs.filter(p => p.alive));
-  return { t: 'state', st: 1, ar: 0, t: +sim.time.toFixed(1), sc: me.score,
+  return { t: 'state', st: 1, ar: 0, gt: +sim.time.toFixed(1), sc: me.score,
     me: serialize(me), o: others.slice(0, 16).map(serialize),
     f: sim.foods.slice(0, MAX_FOOD).map(f => [Math.round(f.x), Math.round(f.y), f.type, f.r, f.color]) };
 }
