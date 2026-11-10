@@ -174,8 +174,19 @@ function createRoom(mode) {
   return room;
 }
 function firstAvailableRoom(mode) {
-  for (const room of rooms.values()) {
-    if (room.mode === mode && room.players.size < MAX_PLAYERS) return room;
+  for (const room of [...rooms.values()]) {
+    if (room.mode !== mode || room.players.size >= MAX_PLAYERS) continue;
+    const host = room.hostId && room.players.get(room.hostId);
+    // Não encaminhar novos jogadores para uma sala sem anfitrião/simulador ativo.
+    // Isso evita clientes conectados a uma sala que não transmite estado de jogo.
+    if (!host || !host.ws || host.ws.readyState !== WebSocket.OPEN) {
+      console.warn('[room] discard_without_active_host', JSON.stringify({
+        roomId: room.id, mode: room.mode, players: room.players.size
+      }));
+      destroyRoom(room, true);
+      continue;
+    }
+    return room;
   }
   return createRoom(mode);
 }
