@@ -329,7 +329,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+const wss = new WebSocketServer({ noServer: true, maxPayload: 128 * 1024 });
 server.on('upgrade', async (req, socket, head) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname !== '/ws') {
@@ -385,9 +385,11 @@ wss.on('connection', (ws, req, user) => {
     addPlayer(existingRoom, user, ws);
   }
 
-  ws.on('message', raw => {
+  ws.on('message', (raw, isBinary) => {
+    if (isBinary || raw.length > 120 * 1024) { console.warn('[ws] pacote binário/grande rejeitado', { userId: user.id, bytes: raw.length }); ws.close(1009, 'message_too_large'); return; }
     let m;
-    try { m = JSON.parse(raw.toString()); } catch (_) { return; }
+    try { m = JSON.parse(raw.toString()); } catch (error) { console.warn('[ws] JSON inválido descartado', { userId: user.id, bytes: raw.length }); return; }
+    if (!m || typeof m !== 'object' || Array.isArray(m) || typeof m.t !== 'string') return;
     let roomId = roomByUser.get(user.id);
     let room = roomId && rooms.get(roomId);
 
@@ -417,13 +419,20 @@ wss.on('connection', (ws, req, user) => {
       return;
     }
     if (m.t === 'in') {
+      if (typeof m.d !== 'string' || m.d.length > 12000) { console.warn('[ws] pacote de controle inválido', { userId: user.id, bytes: String(m.d || '').length }); return; }
       const host = room.players.get(room.hostId);
-      if (host && host.ws) send(host.ws, { t: 'in', from: user.id, d: String(m.d || '').slice(0, 60000) });
+      if (host && host.ws) send(host.ws, { t: 'in', from: user.id, d: m.d });
       return;
     }
     if (m.t === 'st') {
+      if (typeof m.d !== 'string' || m.d.length > 100000) { console.warn('[ws] snapshot inválido/grande descartado', { userId: user.id, bytes: String(m.d || '').length }); return; }
+      let packet;
+      try { packet = JSON.parse(m.d); } catch (error) { console.warn('[ws] snapshot JSON inválido', { userId: user.id, bytes: m.d.length }); return; }
+      if (!packet || typeof packet !== 'object' || Array.isArray(packet)) return;
+      if (packet.v === 2 && (!['PLAYERS', 'FOOD', 'MAP'].includes(packet.k) || !Number.isSafeInteger(packet.q))) return;
+      if (packet.v !== 2 && packet.st !== 1) return;
       const target = room.players.get(String(m.to || ''));
-      if (target && target.ws) send(target.ws, { t: 'st', d: String(m.d || '').slice(0, 60000) });
+      if (target && target.ws && target.ws.readyState === WebSocket.OPEN) send(target.ws, { t: 'st', d: m.d });
       return;
     }
   });
