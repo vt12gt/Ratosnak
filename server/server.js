@@ -3,18 +3,18 @@
 const http = require('node:http');
 const { URL } = require('node:url');
 const { WebSocketServer, WebSocket } = require('ws');
-const GameEngine = require('./authoritative-engine');
 
 const PORT = Number(process.env.PORT || 8787);
 const RATOPOLIS_API_URL = String(process.env.RATOPOLIS_API_URL || 'https://ratopolis-api-dev-v30.juniorgmj69.workers.dev').replace(/\/+$/, '');
 const RATO_SNACK_API_URL = String(process.env.RATO_SNACK_API_URL || 'https://rato-snack-api-dev.juniorgmj69.workers.dev').replace(/\/+$/, '');
+const UPSTREAM_TIMEOUT_MS = Math.max(3000, Math.min(20000, Number(process.env.UPSTREAM_TIMEOUT_MS) || 8000));
 const ALLOWED_ORIGINS = new Set([
   'https://vt12gt.github.io',
   'https://ratopolis-cadastro-teste.pages.dev',
   'http://localhost:8158',
   'http://localhost:8787'
 ]);
-const MAX_PLAYERS = 4;
+const MAX_PLAYERS = 10;
 const COUNTDOWN_MS = 5000;
 const RECONNECT_GRACE_MS = 30000;
 
@@ -65,7 +65,7 @@ async function upstream(path, method, body, token) {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(12000)
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
   });
   let data = {};
   try { data = await response.json(); } catch (_) {}
@@ -80,7 +80,7 @@ async function snackUpstream(path, method, body, token) {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(12000)
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
   });
   const raw = await response.text();
   let data;
@@ -113,6 +113,11 @@ function extractRatopolisPlayer(data) {
 async function authenticate(token) {
   if (!token || token.length > 4096) return null;
   const result = await upstream('/api/me', 'GET', undefined, token);
+  if (result.status >= 500) {
+    const error = new Error('ratopolis_upstream_temporarily_unavailable');
+    error.upstreamStatus = result.status;
+    throw error;
+  }
   const user = result.status === 200 ? extractRatopolisPlayer(result.data) : null;
   if (!user) {
     console.warn('Ratópolis session rejected for ticket; upstream status:', result.status,
@@ -127,7 +132,8 @@ function roomPlayers(room) {
     id: p.id,
     nick: p.nick,
     level: p.level || 1,
-    online: !!(p.ws && p.ws.readyState === WebSocket.OPEN)
+    online: !!(p.ws && p.ws.readyState === WebSocket.OPEN),
+    slot: p.slot
   }));
 }
 function send(ws, message) {
@@ -138,7 +144,7 @@ function broadcast(room, message, exceptId) {
 }
 function roster(room) {
   const players = roomPlayers(room);
-  for (const p of room.players.values()) send(p.ws, { t: 'roster', mode: room.mode, players });
+  for (const p of room.players.values()) send(p.ws, { t: 'roster', mode: room.mode, hostType: room.hostType, hostLabel: 'Bot Pro', players });
 }
 function clearCountdown(room) {
   if (room.countdown) clearTimeout(room.countdown);
@@ -146,8 +152,6 @@ function clearCountdown(room) {
 }
 function destroyRoom(room, notify = true) {
   clearCountdown(room);
-  if (room.simTimer) clearInterval(room.simTimer);
-  if (room.simulation) GameEngine.stopSimulation(room.simulation);
   rooms.delete(room.id);
   for (const p of room.players.values()) {
     roomByUser.delete(p.id);
@@ -157,32 +161,17 @@ function destroyRoom(room, notify = true) {
 }
 function createRoom(mode) {
   const room = {
-    mode, id: crypto.randomUUID(), players: new Map(),
-    hostId: null, started: false, countdown: null, createdAt: Date.now(),
-    simulation: GameEngine.createSimulation(mode), simTimer: null, lastTickAt: 0, snapshotAt: 0
+    mode,
+    id: crypto.randomUUID(),
+    players: new Map(),
+    hostId: null,
+    hostType: 'bot-pro',
+    started: false,
+    countdown: null,
+    createdAt: Date.now()
   };
   rooms.set(room.id, room);
   return room;
-}
-function startRoomSimulation(room) {
-  if (room.simTimer) return;
-  room.lastTickAt = Date.now();
-  room.snapshotAt = 0;
-  room.simTimer = setInterval(() => {
-    if (!rooms.has(room.id) || !room.started) return;
-    const now = Date.now();
-    const dt = Math.min(.08, Math.max(.01, (now - room.lastTickAt) / 1000));
-    room.lastTickAt = now;
-    GameEngine.tick(room.simulation, dt, now);
-    if (now - room.snapshotAt < GameEngine.SNAPSHOT_MS) return;
-    room.snapshotAt = now;
-    for (const p of room.players.values()) {
-      if (!p.ws || p.ws.readyState !== WebSocket.OPEN) continue;
-      const state = GameEngine.snapshotFor(room.simulation, p.id);
-      if (state) send(p.ws, state);
-    }
-  }, GameEngine.TICK_MS);
-  if (typeof room.simTimer.unref === 'function') room.simTimer.unref();
 }
 function firstAvailableRoom(mode) {
   for (const room of rooms.values()) {
@@ -196,24 +185,37 @@ function startCountdown(room) {
     room.countdown = null;
     if (!rooms.has(room.id) || room.players.size < 2) return;
     room.started = true;
-    startRoomSimulation(room);
-    broadcast(room, { t: 'start', mode: room.mode, authoritative: true });
+    broadcast(room, { t: 'start', mode: room.mode });
   }, COUNTDOWN_MS);
   broadcast(room, { t: 'countdown', ms: COUNTDOWN_MS, mode: room.mode });
 }
 function addPlayer(room, user, ws) {
   const old = room.players.get(user.id);
   if (old && old.reconnectTimer) clearTimeout(old.reconnectTimer);
-  const player = old || { id: user.id, nick: user.nick, level: user.level || 1, ws: null, reconnectTimer: null, slot: room.players.size };
-  player.nick = user.nick; player.level = user.level || 1; player.ws = ws; player.reconnectTimer = null;
+  const firstHuman = !room.hostId;
+  const usedSlots = new Set([...room.players.values()].filter(p => p.id !== user.id).map(p => p.slot));
+  let nextSlot = 1;
+  while (nextSlot < MAX_PLAYERS && usedSlots.has(nextSlot)) nextSlot++;
+  const slot = old ? old.slot : (firstHuman ? 0 : nextSlot);
+  if (slot >= MAX_PLAYERS) { send(ws, { t: 'full' }); return; }
+  const player = old || { id: user.id, nick: user.nick, level: user.level || 1, ws: null, reconnectTimer: null, slot };
+  player.nick = user.nick;
+  player.level = user.level || 1;
+  player.ws = ws;
+  player.reconnectTimer = null;
   room.players.set(user.id, player);
   roomByUser.set(user.id, room.id);
   if (!room.hostId) room.hostId = user.id;
-  GameEngine.addPlayer(room.simulation, user);
-  send(ws, { t: 'joined', host: null, isHost: false, authoritative: true, mode: room.mode, players: roomPlayers(room) });
+  const isHost = room.hostId === user.id;
+  send(ws, { t: 'joined', host: room.hostId, isHost, hostType: room.hostType, hostLabel: 'Bot Pro', mode: room.mode, players: roomPlayers(room) });
+  if (isHost) {
+    // Host does not need a peer_join event for itself.
+  } else {
+    const host = room.players.get(room.hostId);
+    if (host && host.ws) send(host.ws, { t: old ? 'peer_back' : 'peer_join', id: user.id, nick: user.nick, slot: player.slot });
+  }
   if (room.started) {
-    send(ws, { t: 'start', mode: room.mode, authoritative: true });
-    startRoomSimulation(room);
+    send(ws, { t: 'start', mode: room.mode });
   } else {
     startCountdown(room);
   }
@@ -225,7 +227,8 @@ function removePlayer(room, userId, deliberate = false) {
   if (p.reconnectTimer) clearTimeout(p.reconnectTimer);
   if (!deliberate && p.ws) {
     p.ws = null;
-    GameEngine.disconnectPlayer(room.simulation, userId, false);
+    const host = room.players.get(room.hostId);
+    if (host && host.id !== userId) send(host.ws, { t: 'peer_offline', id: userId });
     p.reconnectTimer = setTimeout(() => {
       if (p.ws) return;
       removePlayer(room, userId, true);
@@ -235,8 +238,12 @@ function removePlayer(room, userId, deliberate = false) {
   }
   room.players.delete(userId);
   roomByUser.delete(userId);
-  GameEngine.disconnectPlayer(room.simulation, userId, true);
-  if (userId === room.hostId) room.hostId = room.players.keys().next().value || null;
+  if (userId === room.hostId) {
+    destroyRoom(room, true);
+    return;
+  }
+  const host = room.players.get(room.hostId);
+  if (host) send(host.ws, { t: 'peer_leave', id: userId });
   if (!room.started && room.players.size < 2) clearCountdown(room);
   roster(room);
   if (room.players.size === 0) destroyRoom(room, false);
@@ -274,11 +281,20 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/me' && req.method === 'GET') {
       const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
       const result = await upstream('/api/me', 'GET', undefined, token);
+      if (result.status >= 500) {
+        console.error('Ratópolis /api/me temporarily unavailable; upstream status:', result.status,
+          'response keys:', Object.keys(result.data || {}).join(','));
+        return json(res, 503, { error: 'ratopolis_temporariamente_indisponivel' }, origin);
+      }
+      if (result.status === 401 || result.status === 403) {
+        console.warn('Ratópolis session rejected; upstream status:', result.status);
+        return json(res, 401, { error: 'sessao_invalida' }, origin);
+      }
       const user = result.status === 200 ? extractRatopolisPlayer(result.data) : null;
       if (!user) {
-        console.warn('Ratópolis /api/me rejected; upstream status:', result.status,
+        console.error('Ratópolis /api/me returned an invalid response; upstream status:', result.status,
           'response keys:', Object.keys(result.data || {}).join(','));
-        return json(res, 401, { error: 'sessao_invalida' }, origin);
+        return json(res, 502, { error: 'resposta_invalida_do_portal' }, origin);
       }
       return json(res, 200, user, origin);
     }
@@ -306,11 +322,14 @@ const server = http.createServer(async (req, res) => {
     return json(res, 404, { error: 'not_found' }, origin);
   } catch (error) {
     console.error('HTTP error:', error);
-    return json(res, error.message === 'body_too_large' ? 413 : 502, { error: 'upstream_unavailable' }, origin);
+    const timedOut = error && error.name === 'TimeoutError';
+    const status = error.message === 'body_too_large' ? 413 : timedOut ? 504 : error.upstreamStatus >= 500 ? 503 : 502;
+    const code = status === 504 ? 'upstream_timeout' : status === 503 ? 'ratopolis_temporariamente_indisponivel' : 'upstream_unavailable';
+    return json(res, status, { error: code }, origin);
   }
 });
 
-const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+const wss = new WebSocketServer({ noServer: true, maxPayload: 128 * 1024 });
 server.on('upgrade', async (req, socket, head) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname !== '/ws') {
@@ -366,9 +385,11 @@ wss.on('connection', (ws, req, user) => {
     addPlayer(existingRoom, user, ws);
   }
 
-  ws.on('message', raw => {
+  ws.on('message', (raw, isBinary) => {
+    if (isBinary || raw.length > 120 * 1024) { console.warn('[ws] pacote binário/grande rejeitado', { userId: user.id, bytes: raw.length }); ws.close(1009, 'message_too_large'); return; }
     let m;
-    try { m = JSON.parse(raw.toString()); } catch (_) { return; }
+    try { m = JSON.parse(raw.toString()); } catch (error) { console.warn('[ws] JSON inválido descartado', { userId: user.id, bytes: raw.length }); return; }
+    if (!m || typeof m !== 'object' || Array.isArray(m) || typeof m.t !== 'string') return;
     let roomId = roomByUser.get(user.id);
     let room = roomId && rooms.get(roomId);
 
@@ -377,18 +398,13 @@ wss.on('connection', (ws, req, user) => {
         addPlayer(room, user, ws);
         return;
       }
-      const allowedModes = new Set(['quick']);
+      const allowedModes = new Set(['quick','survival','challenge','team','boss','infinite','daily','treino','mundial']);
       const requestedMode = String(m.mode || 'quick');
-      if (!allowedModes.has(requestedMode)) {
-        send(ws, { t: 'mode_unsupported', mode: requestedMode, supported: ['quick'] });
-        return;
-      }
-      const selectedMode = requestedMode;
+      const selectedMode = allowedModes.has(requestedMode) ? requestedMode : 'quick';
       room = firstAvailableRoom(selectedMode);
       // A solo player starts immediately with local AI bots; later real players join this live room.
       room.started = true;
       addPlayer(room, user, ws);
-      startRoomSimulation(room);
       return;
     }
     if (!room || !room.players.has(user.id)) return;
@@ -402,17 +418,23 @@ wss.on('connection', (ws, req, user) => {
       send(ws, { t: 'left', roomId: leavingRoomId });
       return;
     }
-    if (m.t === 'input') {
-      // Só direção, boost e pausa entram pela rede. Posição, tamanho e pontuação não vêm do cliente.
-      GameEngine.setInput(room.simulation, user.id, m, Date.now());
+    if (m.t === 'in') {
+      if (typeof m.d !== 'string' || m.d.length > 12000) { console.warn('[ws] pacote de controle inválido', { userId: user.id, bytes: String(m.d || '').length }); return; }
+      const host = room.players.get(room.hostId);
+      if (host && host.ws) send(host.ws, { t: 'in', from: user.id, d: m.d });
       return;
     }
-    if (m.t === 'appearance') {
-      GameEngine.setAppearance(room.simulation, user.id, m);
+    if (m.t === 'st') {
+      if (typeof m.d !== 'string' || m.d.length > 100000) { console.warn('[ws] snapshot inválido/grande descartado', { userId: user.id, bytes: String(m.d || '').length }); return; }
+      let packet;
+      try { packet = JSON.parse(m.d); } catch (error) { console.warn('[ws] snapshot JSON inválido', { userId: user.id, bytes: m.d.length }); return; }
+      if (!packet || typeof packet !== 'object' || Array.isArray(packet)) return;
+      if (packet.v === 2 && (!['PLAYERS', 'FOOD', 'MAP'].includes(packet.k) || !Number.isSafeInteger(packet.q))) return;
+      if (packet.v !== 2 && packet.st !== 1) return;
+      const target = room.players.get(String(m.to || ''));
+      if (target && target.ws && target.ws.readyState === WebSocket.OPEN) send(target.ws, { t: 'st', d: m.d });
       return;
     }
-    // Retransmissão WebRTC antiga desativada no Online autoritativo.
-    if (m.t === 'in' || m.t === 'st') return;
   });
 
   ws.on('close', () => {
