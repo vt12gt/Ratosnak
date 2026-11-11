@@ -295,7 +295,7 @@ function addPlayer(room, user, ws) {
   roomByUser.set(user.id, room.id);
   if (!room.hostId) room.hostId = user.id;
   const isHost = room.hostId === user.id;
-  send(ws, { t: 'joined', host: room.hostId, isHost, hostType: room.hostType, hostLabel: 'Bot Pro', mode: room.mode, roomKey: room.roomKey, players: roomPlayers(room) });
+  send(ws, { t: 'joined', roomId: room.id, host: room.hostId, isHost, hostType: room.hostType, hostLabel: 'Bot Pro', mode: room.mode, roomKey: room.roomKey, players: roomPlayers(room) });
   if (isHost) {
     // Host does not need a peer_join event for itself.
   } else {
