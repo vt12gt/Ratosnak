@@ -387,20 +387,20 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, user, origin);
     }
     if (url.pathname === '/api/admin/announcements/access' && req.method === 'GET') {
-      const token = String(req.headers.authorization || '').replace(/^Bearer\\s+/i, '');
+      const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
       const user = await authenticate(token);
       if (!user) return json(res, 401, { error: 'sessao_invalida' }, origin);
       const roles = user.announcementRoles || [];
       return json(res, 200, { ok: true, allowed: roles.some(role => ['founder','spadmin','gm'].includes(role)), roles: roles.filter(role => ['founder','spadmin','gm'].includes(role)) }, origin);
     }
     if (url.pathname === '/api/admin/announcements' && req.method === 'POST') {
-      const token = String(req.headers.authorization || '').replace(/^Bearer\\s+/i, '');
+      const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
       const user = await authenticate(token);
       if (!user) return json(res, 401, { error: 'sessao_invalida' }, origin);
       const roles = user.announcementRoles || [];
       if (!roles.some(role => ['founder','spadmin','gm'].includes(role))) return json(res, 403, { error: 'permissao_insuficiente' }, origin);
       const body = await readBody(req);
-      const message = String(body.message || '').replace(/[\\u0000-\\u001f\\u007f]/g, ' ').replace(/\\s+/g, ' ').trim().slice(0, 240);
+      const message = String(body.message || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240);
       if (message.length < 3) return json(res, 400, { error: 'mensagem_muito_curta' }, origin);
       const announcement = { t: 'global_announcement', kind: 'manual', nickname: user.nick, roles, message, displayMs: 8000, issuedAt: Date.now() };
       for (const connected of socketsByUser.values()) send(connected, announcement);
