@@ -520,3 +520,5 @@ setInterval(syncWorldBossRoom, 5000);
 server.listen(PORT, '0.0.0.0', () => {
   console.log('Rato Snack multiplayer server listening on port ' + PORT);
 });
+
+// Deploy signal: reapresenta o commit ao webhook do Render sem alterar a lógica.
