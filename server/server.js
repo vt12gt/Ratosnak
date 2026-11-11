@@ -301,6 +301,7 @@ function addPlayer(room, user, ws) {
   } else {
     const host = room.players.get(room.hostId);
     if (host && host.ws) send(host.ws, { t: old ? 'peer_back' : 'peer_join', id: user.id, nick: user.nick, slot: player.slot });
+    if (room.mode === 'treino') broadcast(room, { t: 'peer_join', id: user.id, nick: user.nick, slot: player.slot }, user.id);
   }
   if (room.started) {
     send(ws, { t: 'start', mode: room.mode, roomKey: room.roomKey });
@@ -332,6 +333,7 @@ function removePlayer(room, userId, deliberate = false) {
   }
   const host = room.players.get(room.hostId);
   if (host) send(host.ws, { t: 'peer_leave', id: userId });
+  if (room.mode === 'treino') broadcast(room, { t: 'peer_leave', id: userId });
   if (!room.started && room.players.size < 2) clearCountdown(room);
   roster(room);
   if (room.players.size === 0) destroyRoom(room, false);
@@ -564,7 +566,7 @@ wss.on('connection', (ws, req, user) => {
     }
     if (m.t === 'st') {
       const target = room.players.get(String(m.to || ''));
-      if (target && target.ws) send(target.ws, { t: 'st', d: String(m.d || '').slice(0, 60000) });
+      if (target && target.ws) send(target.ws, { t: 'st', from: user.id, d: String(m.d || '').slice(0, 60000) });
       return;
     }
   });
