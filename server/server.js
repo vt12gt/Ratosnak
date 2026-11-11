@@ -7,6 +7,7 @@ const { WebSocketServer, WebSocket } = require('ws');
 const PORT = Number(process.env.PORT || 8787);
 const RATOPOLIS_API_URL = String(process.env.RATOPOLIS_API_URL || 'https://ratopolis-api-dev-v30.juniorgmj69.workers.dev').replace(/\/+$/, '');
 const RATO_SNACK_API_URL = String(process.env.RATO_SNACK_API_URL || 'https://rato-snack-api-dev.juniorgmj69.workers.dev').replace(/\/+$/, '');
+const RATIVA_CORE_API_URL = String(process.env.RATIVA_CORE_API_URL || 'https://rativa-core-dev.juniorgmj69.workers.dev').replace(/\/+$/, '');
 const UPSTREAM_TIMEOUT_MS = Math.max(3000, Math.min(20000, Number(process.env.UPSTREAM_TIMEOUT_MS) || 8000));
 const ALLOWED_ORIGINS = new Set([
   'https://vt12gt.github.io',
@@ -143,6 +144,32 @@ function extractRatopolisPlayer(data) {
   return null;
 }
 
+function extractOfficialAnnouncementRoles(raw) {
+  if (!raw || typeof raw !== 'object') return [];
+  const data = raw.data && typeof raw.data === 'object' ? { ...raw, ...raw.data } : raw;
+  if (data.ok !== true || !Array.isArray(data.titles)) return [];
+  const codes = new Set(data.titles.map(item => String(item && item.code || '').trim().toLowerCase()));
+  return ['founder', 'spadmin', 'gm'].filter(role => codes.has(role));
+}
+
+async function officialAnnouncementRoles(token) {
+  if (!token) return [];
+  try {
+    const response = await fetch(RATIVA_CORE_API_URL + '/api/core/titles/me', {
+      method: 'GET',
+      headers: { Authorization: 'Bearer ' + token, Accept: 'application/json' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
+    });
+    const raw = await response.json().catch(() => ({}));
+    if (!response.ok) return [];
+    return extractOfficialAnnouncementRoles(raw);
+  } catch (error) {
+    console.warn('Rativa Core titles temporarily unavailable:', error.message);
+    return [];
+  }
+}
+
 async function authenticate(token) {
   if (!token || token.length > 4096) return null;
   const result = await upstream('/api/me', 'GET', undefined, token);
@@ -157,7 +184,8 @@ async function authenticate(token) {
       'response keys:', Object.keys(result.data || {}).join(','));
     return null;
   }
-  return { ...user, token };
+  const announcementRoles = await officialAnnouncementRoles(token);
+  return { ...user, token, announcementRoles };
 }
 
 function roomPlayers(room) {
@@ -435,6 +463,17 @@ wss.on('connection', (ws, req, user) => {
   }, 60000);
   if (typeof sessionCheck.unref === 'function') sessionCheck.unref();
   send(ws, { t: 'hello' });
+  if (Array.isArray(user.announcementRoles) && user.announcementRoles.length) {
+    const announcement = {
+      t: 'global_announcement',
+      kind: 'staff_online',
+      nickname: user.nick,
+      roles: user.announcementRoles,
+      displayMs: 8000,
+      issuedAt: Date.now()
+    };
+    for (const connected of socketsByUser.values()) send(connected, announcement);
+  }
 
   const existingRoomId = roomByUser.get(user.id);
   const existingRoom = existingRoomId && rooms.get(existingRoomId);
