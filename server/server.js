@@ -17,6 +17,39 @@ const ALLOWED_ORIGINS = new Set([
 const MAX_PLAYERS = 10;
 const COUNTDOWN_MS = 5000;
 const RECONNECT_GRACE_MS = 30000;
+const WORLD_BOSS_TIME_ZONE = 'America/Recife';
+const WORLD_BOSS_STARTS = [600, 1320];
+const WORLD_BOSS_DURATION_MIN = 60;
+const WORLD_BOSS_PREOPEN_MIN = 2;
+
+function worldBossClock(now = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: WORLD_BOSS_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(now).map(part => [part.type, part.value]));
+  return { day: parts.year + '-' + parts.month + '-' + parts.day, minute: Number(parts.hour) * 60 + Number(parts.minute) };
+}
+function worldBossWindow(now = new Date()) {
+  const clock = worldBossClock(now);
+  for (let i = 0; i < WORLD_BOSS_STARTS.length; i++) {
+    const start = WORLD_BOSS_STARTS[i];
+    if (clock.minute >= start && clock.minute < start + WORLD_BOSS_DURATION_MIN) {
+      return { open: true, preparing: false, slot: i, day: clock.day, start, end: start + WORLD_BOSS_DURATION_MIN };
+    }
+    if (clock.minute >= start - WORLD_BOSS_PREOPEN_MIN && clock.minute < start) {
+      return { open: false, preparing: true, slot: i, day: clock.day, start, end: start + WORLD_BOSS_DURATION_MIN };
+    }
+  }
+  return { open: false, preparing: false, slot: -1, day: clock.day, start: null, end: null };
+}
+function worldBossMessage() {
+  return 'Boss Mundial fechado. Próximos horários: 10:00 e 22:00 (horário de Recife). A entrada só é liberada no horário oficial.';
+}
+function roomKeyForMode(mode) {
+  if (mode === 'mundial') return 'BOSS_MUNDIAL';
+  if (mode === 'boss') return 'BOSS';
+  return String(mode || 'quick').toUpperCase();
+}
 
 const rooms = new Map();
 const socketsByUser = new Map();
@@ -144,7 +177,7 @@ function broadcast(room, message, exceptId) {
 }
 function roster(room) {
   const players = roomPlayers(room);
-  for (const p of room.players.values()) send(p.ws, { t: 'roster', mode: room.mode, hostType: room.hostType, hostLabel: 'Bot Pro', players });
+  for (const p of room.players.values()) send(p.ws, { t: 'roster', mode: room.mode, roomKey: room.roomKey, hostType: room.hostType, hostLabel: 'Bot Pro', players });
 }
 function clearCountdown(room) {
   if (room.countdown) clearTimeout(room.countdown);
@@ -162,6 +195,7 @@ function destroyRoom(room, notify = true) {
 function createRoom(mode) {
   const room = {
     mode,
+    roomKey: roomKeyForMode(mode),
     id: crypto.randomUUID(),
     players: new Map(),
     hostId: null,
@@ -174,10 +208,29 @@ function createRoom(mode) {
   return room;
 }
 function firstAvailableRoom(mode) {
+  const key = roomKeyForMode(mode);
   for (const room of rooms.values()) {
-    if (room.mode === mode && room.players.size < MAX_PLAYERS) return room;
+    if (room.roomKey === key && room.players.size < MAX_PLAYERS) return room;
   }
   return createRoom(mode);
+}
+function syncWorldBossRoom() {
+  const state = worldBossWindow();
+  let room = [...rooms.values()].find(item => item.roomKey === 'BOSS_MUNDIAL');
+  if (state.preparing) {
+    if (!room) room = createRoom('mundial');
+    room.preparing = true;
+    room.joinable = false;
+    return;
+  }
+  if (state.open) {
+    if (!room) room = createRoom('mundial');
+    room.preparing = false;
+    room.joinable = true;
+    room.started = true;
+    return;
+  }
+  if (room) destroyRoom(room, true);
 }
 function startCountdown(room) {
   if (room.started || room.countdown || room.players.size < 2) return;
@@ -185,11 +238,15 @@ function startCountdown(room) {
     room.countdown = null;
     if (!rooms.has(room.id) || room.players.size < 2) return;
     room.started = true;
-    broadcast(room, { t: 'start', mode: room.mode });
+    broadcast(room, { t: 'start', mode: room.mode, roomKey: room.roomKey });
   }, COUNTDOWN_MS);
-  broadcast(room, { t: 'countdown', ms: COUNTDOWN_MS, mode: room.mode });
+  broadcast(room, { t: 'countdown', ms: COUNTDOWN_MS, mode: room.mode, roomKey: room.roomKey });
 }
 function addPlayer(room, user, ws) {
+  if (room.roomKey === 'BOSS_MUNDIAL' && !worldBossWindow().open) {
+    send(ws, { t: 'room_closed', mode: 'mundial', roomKey: 'BOSS_MUNDIAL', message: worldBossMessage() });
+    return false;
+  }
   const old = room.players.get(user.id);
   if (old && old.reconnectTimer) clearTimeout(old.reconnectTimer);
   const firstHuman = !room.hostId;
@@ -207,7 +264,7 @@ function addPlayer(room, user, ws) {
   roomByUser.set(user.id, room.id);
   if (!room.hostId) room.hostId = user.id;
   const isHost = room.hostId === user.id;
-  send(ws, { t: 'joined', host: room.hostId, isHost, hostType: room.hostType, hostLabel: 'Bot Pro', mode: room.mode, players: roomPlayers(room) });
+  send(ws, { t: 'joined', host: room.hostId, isHost, hostType: room.hostType, hostLabel: 'Bot Pro', mode: room.mode, roomKey: room.roomKey, players: roomPlayers(room) });
   if (isHost) {
     // Host does not need a peer_join event for itself.
   } else {
@@ -215,7 +272,7 @@ function addPlayer(room, user, ws) {
     if (host && host.ws) send(host.ws, { t: old ? 'peer_back' : 'peer_join', id: user.id, nick: user.nick, slot: player.slot });
   }
   if (room.started) {
-    send(ws, { t: 'start', mode: room.mode });
+    send(ws, { t: 'start', mode: room.mode, roomKey: room.roomKey });
   } else {
     startCountdown(room);
   }
@@ -382,7 +439,12 @@ wss.on('connection', (ws, req, user) => {
   const existingRoomId = roomByUser.get(user.id);
   const existingRoom = existingRoomId && rooms.get(existingRoomId);
   if (existingRoom && existingRoom.players.has(user.id)) {
-    addPlayer(existingRoom, user, ws);
+    if (existingRoom.roomKey === 'BOSS_MUNDIAL' && !worldBossWindow().open) {
+      send(ws, { t: 'room_closed', mode: 'mundial', roomKey: 'BOSS_MUNDIAL', message: worldBossMessage() });
+      removePlayer(existingRoom, user.id, true);
+    } else {
+      addPlayer(existingRoom, user, ws);
+    }
   }
 
   ws.on('message', raw => {
@@ -392,13 +454,21 @@ wss.on('connection', (ws, req, user) => {
     let room = roomId && rooms.get(roomId);
 
     if (m.t === 'play') {
-      if (room && room.players.has(user.id)) {
-        addPlayer(room, user, ws);
-        return;
-      }
       const allowedModes = new Set(['quick','survival','challenge','team','boss','infinite','daily','treino','mundial']);
       const requestedMode = String(m.mode || 'quick');
       const selectedMode = allowedModes.has(requestedMode) ? requestedMode : 'quick';
+      if (selectedMode === 'mundial' && !worldBossWindow().open) {
+        send(ws, { t: 'room_closed', mode: 'mundial', roomKey: 'BOSS_MUNDIAL', message: worldBossMessage() });
+        return;
+      }
+      if (room && room.players.has(user.id)) {
+        if (room.roomKey !== roomKeyForMode(selectedMode)) {
+          send(ws, { t: 'room_mode_mismatch', requestedMode: selectedMode, roomMode: room.mode, roomKey: room.roomKey });
+          return;
+        }
+        addPlayer(room, user, ws);
+        return;
+      }
       room = firstAvailableRoom(selectedMode);
       // A solo player starts immediately with local AI bots; later real players join this live room.
       room.started = true;
@@ -443,6 +513,9 @@ wss.on('connection', (ws, req, user) => {
   });
   ws.on('error', error => console.error('WebSocket error:', error.message));
 });
+
+syncWorldBossRoom();
+setInterval(syncWorldBossRoom, 5000);
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log('Rato Snack multiplayer server listening on port ' + PORT);
