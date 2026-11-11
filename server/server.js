@@ -54,6 +54,7 @@ function roomKeyForMode(mode) {
 
 const rooms = new Map();
 const socketsByUser = new Map();
+const staffPresenceTimers = new Map();
 const roomByUser = new Map();
 const wsTickets = new Map();
 
@@ -194,7 +195,8 @@ function roomPlayers(room) {
     nick: p.nick,
     level: p.level || 1,
     online: !!(p.ws && p.ws.readyState === WebSocket.OPEN),
-    slot: p.slot
+    slot: p.slot,
+    staffRole: p.staffRole || ''
   }));
 }
 function send(ws, message) {
@@ -286,6 +288,7 @@ function addPlayer(room, user, ws) {
   const player = old || { id: user.id, nick: user.nick, level: user.level || 1, ws: null, reconnectTimer: null, slot };
   player.nick = user.nick;
   player.level = user.level || 1;
+  player.staffRole = (user.announcementRoles || []).find(role => ['founder','spadmin','gm'].includes(role)) || '';
   player.ws = ws;
   player.reconnectTimer = null;
   room.players.set(user.id, player);
@@ -383,6 +386,26 @@ const server = http.createServer(async (req, res) => {
       }
       return json(res, 200, user, origin);
     }
+    if (url.pathname === '/api/admin/announcements/access' && req.method === 'GET') {
+      const token = String(req.headers.authorization || '').replace(/^Bearer\\s+/i, '');
+      const user = await authenticate(token);
+      if (!user) return json(res, 401, { error: 'sessao_invalida' }, origin);
+      const roles = user.announcementRoles || [];
+      return json(res, 200, { ok: true, allowed: roles.some(role => ['founder','spadmin','gm'].includes(role)), roles: roles.filter(role => ['founder','spadmin','gm'].includes(role)) }, origin);
+    }
+    if (url.pathname === '/api/admin/announcements' && req.method === 'POST') {
+      const token = String(req.headers.authorization || '').replace(/^Bearer\\s+/i, '');
+      const user = await authenticate(token);
+      if (!user) return json(res, 401, { error: 'sessao_invalida' }, origin);
+      const roles = user.announcementRoles || [];
+      if (!roles.some(role => ['founder','spadmin','gm'].includes(role))) return json(res, 403, { error: 'permissao_insuficiente' }, origin);
+      const body = await readBody(req);
+      const message = String(body.message || '').replace(/[\\u0000-\\u001f\\u007f]/g, ' ').replace(/\\s+/g, ' ').trim().slice(0, 240);
+      if (message.length < 3) return json(res, 400, { error: 'mensagem_muito_curta' }, origin);
+      const announcement = { t: 'global_announcement', kind: 'manual', nickname: user.nick, roles, message, displayMs: 8000, issuedAt: Date.now() };
+      for (const connected of socketsByUser.values()) send(connected, announcement);
+      return json(res, 200, { ok: true, deliveredTo: socketsByUser.size }, origin);
+    }
     if (url.pathname === '/api/ws-ticket' && req.method === 'POST') {
       const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
       const user = await authenticate(token);
@@ -464,6 +487,7 @@ wss.on('connection', (ws, req, user) => {
   if (typeof sessionCheck.unref === 'function') sessionCheck.unref();
   send(ws, { t: 'hello' });
   if (Array.isArray(user.announcementRoles) && user.announcementRoles.length) {
+    send(ws, { t: 'staff_panel_access', allowed: true, roles: user.announcementRoles });
     const announcement = {
       t: 'global_announcement',
       kind: 'staff_online',
@@ -473,6 +497,14 @@ wss.on('connection', (ws, req, user) => {
       issuedAt: Date.now()
     };
     for (const connected of socketsByUser.values()) send(connected, announcement);
+    if (user.announcementRoles.some(role => role === 'founder' || role === 'spadmin')) {
+      const timer = setInterval(() => {
+        if (ws.readyState !== WebSocket.OPEN || socketsByUser.get(user.id) !== ws) { clearInterval(timer); staffPresenceTimers.delete(user.id); return; }
+        const repeat = { ...announcement, issuedAt: Date.now(), repeat: true };
+        for (const connected of socketsByUser.values()) send(connected, repeat);
+      }, 300000);
+      staffPresenceTimers.set(user.id, timer);
+    }
   }
 
   const existingRoomId = roomByUser.get(user.id);
@@ -539,6 +571,8 @@ wss.on('connection', (ws, req, user) => {
 
   ws.on('close', () => {
     clearInterval(sessionCheck);
+    const staffTimer = staffPresenceTimers.get(user.id);
+    if (staffTimer) { clearInterval(staffTimer); staffPresenceTimers.delete(user.id); }
     if (socketsByUser.get(user.id) === ws) socketsByUser.delete(user.id);
     const id = roomByUser.get(user.id);
     const room = id && rooms.get(id);
