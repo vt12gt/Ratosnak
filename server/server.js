@@ -9,6 +9,7 @@ const SystemHost = require('./system-host');
 const PORT = Number(process.env.PORT || 8787);
 const RATOPOLIS_API_URL = String(process.env.RATOPOLIS_API_URL || 'https://ratopolis-api-dev-v30.juniorgmj69.workers.dev').replace(/\/+$/, '');
 const RATO_SNACK_API_URL = String(process.env.RATO_SNACK_API_URL || 'https://rato-snack-api-dev.juniorgmj69.workers.dev').replace(/\/+$/, '');
+const RATIVA_CORE_API_URL = String(process.env.RATIVA_CORE_API_URL || 'https://rativa-core-dev.juniorgmj69.workers.dev').replace(/\/+$/, '');
 const ALLOWED_ORIGINS = new Set([
   'https://vt12gt.github.io',
   'https://ratopolis-cadastro-teste.pages.dev',
@@ -111,6 +112,27 @@ function extractRatopolisPlayer(data) {
   return null;
 }
 
+function extractOfficialAnnouncementRoles(raw) {
+  if (!raw || typeof raw !== 'object') return [];
+  const data = raw.data && typeof raw.data === 'object' ? { ...raw, ...raw.data } : raw;
+  if (data.ok !== true || !Array.isArray(data.titles)) return [];
+  const codes = new Set(data.titles.map(item => String(item && item.code || '').trim().toLowerCase()));
+  return ['founder', 'spadmin', 'gm'].filter(role => codes.has(role));
+}
+async function officialAnnouncementRoles(token) {
+  if (!token) return [];
+  try {
+    const response = await fetch(RATIVA_CORE_API_URL + '/api/core/titles/me', {
+      method: 'GET', headers: { Authorization: 'Bearer ' + token, Accept: 'application/json' },
+      cache: 'no-store', signal: AbortSignal.timeout(8000)
+    });
+    const raw = await response.json().catch(() => ({}));
+    return response.ok ? extractOfficialAnnouncementRoles(raw) : [];
+  } catch (error) {
+    console.warn('Rativa Core roles unavailable:', error.message);
+    return [];
+  }
+}
 async function authenticate(token) {
   if (!token || token.length > 4096) return null;
   const result = await upstream('/api/me', 'GET', undefined, token);
@@ -120,17 +142,25 @@ async function authenticate(token) {
       'response keys:', Object.keys(result.data || {}).join(','));
     return null;
   }
-  return { ...user, token };
+  const roles = await officialAnnouncementRoles(token);
+  return { ...user, token, announcementRoles: roles };
 }
 
+function reselectPlayerHost(room) {
+  const online = [...room.players.values()].filter(p => p.ws && p.ws.readyState === WebSocket.OPEN);
+  online.sort((a, b) => {
+    const rank = p => p.staffRole === 'founder' ? 0 : p.staffRole === 'spadmin' ? 1 : 2;
+    return rank(a) - rank(b) || (a.joinedAt || 0) - (b.joinedAt || 0) || String(a.id).localeCompare(String(b.id));
+  });
+  room.playerHostId = online.length ? online[0].id : null;
+  return room.playerHostId;
+}
 function roomPlayers(room) {
   const realPlayers = [...room.players.values()].map(p => ({
-    id: p.id,
-    nick: p.nick,
-    level: p.level || 1,
+    id: p.id, nick: p.nick, level: p.level || 1,
     online: !!(p.ws && p.ws.readyState === WebSocket.OPEN),
-    system: false,
-    role: 'player'
+    system: false, role: p.staffRole || 'player', staffRole: p.staffRole || '',
+    isRoomHost: p.id === room.playerHostId
   }));
   return SystemHost.roster(room, realPlayers);
 }
@@ -142,7 +172,7 @@ function broadcast(room, message, exceptId) {
 }
 function roster(room) {
   const players = roomPlayers(room);
-  for (const p of room.players.values()) send(p.ws, { t: 'roster', mode: room.mode, players });
+  for (const p of room.players.values()) send(p.ws, { t: 'roster', mode: room.mode, authoritative: true, host: room.playerHostId || SystemHost.ID, players });
 }
 function clearCountdown(room) {
   if (room.countdown) clearTimeout(room.countdown);
@@ -164,7 +194,7 @@ function createRoom(mode) {
     mode, id: crypto.randomUUID(), players: new Map(),
     // O anfitrião é uma entidade interna do servidor: não usa WebSocket,
     // não ocupa vaga e nunca é transferido para um jogador real.
-    hostId: SystemHost.ID, systemHost: null,
+    hostId: SystemHost.ID, playerHostId: null, systemHost: null,
     started: false, countdown: null, createdAt: Date.now(), idleSince: Date.now(),
     simulation: GameEngine.createSimulation(mode), simTimer: null, lastTickAt: 0, snapshotAt: 0
   };
@@ -213,15 +243,16 @@ function startCountdown(room) {
 function addPlayer(room, user, ws) {
   const old = room.players.get(user.id);
   if (old && old.reconnectTimer) clearTimeout(old.reconnectTimer);
-  const player = old || { id: user.id, nick: user.nick, level: user.level || 1, ws: null, reconnectTimer: null, slot: room.players.size, matchId: crypto.randomUUID(), matchStartedAt: Date.now(), recordSaved: false };
-  player.nick = user.nick; player.level = user.level || 1; player.ws = ws; player.reconnectTimer = null;
+  const player = old || { id: user.id, nick: user.nick, level: user.level || 1, ws: null, reconnectTimer: null, slot: room.players.size, joinedAt: Date.now(), matchId: crypto.randomUUID(), matchStartedAt: Date.now(), recordSaved: false };
+  player.nick = user.nick; player.level = user.level || 1; player.staffRole = (user.announcementRoles || []).includes('founder') ? 'founder' : (user.announcementRoles || []).includes('spadmin') ? 'spadmin' : ''; player.ws = ws; player.reconnectTimer = null;
   room.players.set(user.id, player);
   roomByUser.set(user.id, room.id);
   room.idleSince = null;
-  // O anfitrião virtual permanece fixo; nenhum jogador recebe autoridade de host.
-  room.hostId = SystemHost.ID;
+  // O servidor continua sendo a autoridade da simulação. O anfitrião humano é apenas um papel de presença, sem poderes de controle.
+  reselectPlayerHost(room);
+  room.hostId = room.playerHostId || SystemHost.ID;
   GameEngine.addPlayer(room.simulation, user);
-  send(ws, { t: 'joined', host: SystemHost.ID, hostNick: SystemHost.PROFILE.nick, isHost: false, systemHost: true, authoritative: true, mode: room.mode, players: roomPlayers(room) });
+  send(ws, { t: 'joined', host: room.hostId, hostNick: room.players.get(room.hostId)?.nick || SystemHost.PROFILE.nick, isHost: room.playerHostId === user.id, systemHost: true, authoritative: true, mode: room.mode, players: roomPlayers(room) });
   if (room.started) {
     send(ws, { t: 'start', mode: room.mode, authoritative: true });
     startRoomSimulation(room);
@@ -285,6 +316,8 @@ function removePlayer(room, userId, deliberate = false) {
   if (!deliberate && p.ws) {
     p.ws = null;
     GameEngine.disconnectPlayer(room.simulation, userId, false);
+    reselectPlayerHost(room);
+    room.hostId = room.playerHostId || SystemHost.ID;
     p.reconnectTimer = setTimeout(() => {
       if (p.ws) return;
       removePlayer(room, userId, true);
@@ -296,6 +329,8 @@ function removePlayer(room, userId, deliberate = false) {
   room.players.delete(userId);
   roomByUser.delete(userId);
   GameEngine.disconnectPlayer(room.simulation, userId, true);
+  reselectPlayerHost(room);
+  room.hostId = room.playerHostId || SystemHost.ID;
   // O host virtual nunca sai. Quando o último jogador real sai, a sala fica
   // reservada pelo sistema e pronta para receber o próximo jogador.
   if (!room.started && room.players.size < 2) clearCountdown(room);
@@ -317,9 +352,10 @@ const server = http.createServer(async (req, res) => {
   try {
     if (url.pathname === '/health' && req.method === 'GET') {
       return json(res, 200, {
-        ok: true, service: 'rato-snack-realtime', version: '1.1.0-system-host',
+        ok: true, service: 'rato-snack-realtime', version: '1.2.0-server-authoritative-host-election',
         rooms: rooms.size, onlinePlayers: socketsByUser.size,
         systemHost: { id: SystemHost.ID, nick: SystemHost.PROFILE.nick, alwaysPresent: true },
+        hostPriority: ['founder', 'spadmin', 'player'],
         idleRooms: [...rooms.values()].filter(room => room.players.size === 0).length
       }, origin);
     }
