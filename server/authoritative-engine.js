@@ -5,7 +5,7 @@
 const WORLD_W = 3600;
 const WORLD_H = 2400;
 const TICK_MS = 50;
-const SNAPSHOT_MS = 50;
+const SNAPSHOT_MS = 100;
 const MAX_FOOD = 100;
 const MAX_LENGTH = 220;
 
