@@ -231,6 +231,8 @@ function createRoom(mode) {
     results: new Map(),
     sharedDrops: new Map(),
     killCounts: new Map(),
+    alivePlayers: new Map(),
+    botDeathAt: new Map(),
     hostId: null,
     hostType: 'bot-pro',
     started: false,
@@ -297,6 +299,7 @@ function addPlayer(room, user, ws) {
   player.ws = ws;
   player.reconnectTimer = null;
   room.players.set(user.id, player);
+  if (!room.alivePlayers.has(user.id)) room.alivePlayers.set(user.id, true);
   roomByUser.set(user.id, room.id);
   if (room.started && !room.startedAt) room.startedAt = Date.now();
   if (!room.hostId) room.hostId = user.id;
@@ -566,6 +569,21 @@ wss.on('connection', (ws, req, user) => {
       send(ws, { t: 'left', roomId: leavingRoomId });
       return;
     }
+    if (m.t === 'player_death') {
+      const victimId = String(m.victimId || '');
+      if (!victimId || !room.players.has(victimId)) return;
+      const senderIsHost = user.id === room.hostId;
+      if (!senderIsHost && victimId !== user.id) return;
+      if (room.alivePlayers.get(victimId) === false) return;
+      room.alivePlayers.set(victimId, false);
+      const requestedKiller = String(m.killerId || '');
+      const killerId = requestedKiller && room.players.has(requestedKiller) && requestedKiller !== victimId
+        ? (senderIsHost ? requestedKiller : '')
+        : '';
+      if (killerId) room.killCounts.set(killerId, Number(room.killCounts.get(killerId) || 0) + 1);
+      broadcast(room, { t: 'player_death', victimId, killerId, mode: room.mode, at: Date.now() });
+      return;
+    }
     if (m.t === 'world_event') {
       const e = m.event && typeof m.event === 'object' ? m.event : {};
       const senderIsHost = user.id === room.hostId;
@@ -573,10 +591,14 @@ wss.on('connection', (ws, req, user) => {
         if (!senderIsHost) return;
         const botIndex = Math.floor(Number(e.botIndex));
         if (!Number.isInteger(botIndex) || botIndex < 0 || botIndex > 100) return;
+        const now = Date.now();
+        const lastDeath = Number(room.botDeathAt.get(botIndex) || 0);
+        if (now - lastDeath < 350) return;
+        room.botDeathAt.set(botIndex, now);
         const killerId = String(e.killerId || '');
         if (killerId && !room.players.has(killerId)) return;
         if (killerId) room.killCounts.set(killerId, Number(room.killCounts.get(killerId) || 0) + 1);
-        broadcast(room, { t: 'bot_death', botIndex, killerId, mode: room.mode, at: Date.now() });
+        broadcast(room, { t: 'bot_death', botIndex, killerId, mode: room.mode, at: now });
         return;
       }
       if (e.kind === 'drops') {
@@ -656,6 +678,7 @@ wss.on('connection', (ws, req, user) => {
         ht: String(a.ht || 'nenhum').slice(0, 24), cl: String(a.cl || 'nenhum').slice(0, 24), g
       };
       sender.lastAvatarAt = now;
+      if (avatar.al) room.alivePlayers.set(user.id, true);
       broadcast(room, { t: 'avatar', id: user.id, a: avatar }, user.id);
       if (!room.startedAt) room.startedAt = now;
       if (now - Number(room.lastClockBroadcastAt || 0) >= 1000) {
