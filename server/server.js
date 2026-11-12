@@ -204,6 +204,9 @@ function createRoom(mode) {
   return room;
 }
 function startRoomSimulation(room) {
+  // A simulação do servidor foi desativada: o jogo local é a autoridade da jogabilidade.
+  // O servidor apenas mantém a sala e retransmite pacotes entre os clientes.
+  return;
   if (room.simTimer) return;
   room.lastTickAt = Date.now();
   room.snapshotAt = 0;
@@ -236,7 +239,7 @@ function startCountdown(room) {
     if (!rooms.has(room.id) || room.players.size < 2) return;
     room.started = true;
     startRoomSimulation(room);
-    broadcast(room, { t: 'start', mode: room.mode, authoritative: true });
+    broadcast(room, { t: 'start', mode: room.mode, authoritative: false });
   }, COUNTDOWN_MS);
   broadcast(room, { t: 'countdown', ms: COUNTDOWN_MS, mode: room.mode });
 }
@@ -251,10 +254,9 @@ function addPlayer(room, user, ws) {
   // O servidor continua sendo a autoridade da simulação. O anfitrião humano é apenas um papel de presença, sem poderes de controle.
   reselectPlayerHost(room);
   room.hostId = room.playerHostId || SystemHost.ID;
-  GameEngine.addPlayer(room.simulation, user);
-  send(ws, { t: 'joined', host: room.hostId, hostNick: room.players.get(room.hostId)?.nick || SystemHost.PROFILE.nick, isHost: room.playerHostId === user.id, systemHost: true, authoritative: true, mode: room.mode, players: roomPlayers(room) });
+  send(ws, { t: 'joined', host: room.hostId, hostNick: room.players.get(room.hostId)?.nick || SystemHost.PROFILE.nick, isHost: room.playerHostId === user.id, systemHost: true, authoritative: false, mode: room.mode, players: roomPlayers(room) });
   if (room.started) {
-    send(ws, { t: 'start', mode: room.mode, authoritative: true });
+    send(ws, { t: 'start', mode: room.mode, authoritative: false });
     startRoomSimulation(room);
   } else {
     startCountdown(room);
@@ -507,17 +509,20 @@ wss.on('connection', (ws, req, user) => {
       send(ws, { t: 'left', roomId: leavingRoomId });
       return;
     }
-    if (m.t === 'input') {
-      // Só direção, boost e pausa entram pela rede. Posição, tamanho e pontuação não vêm do cliente.
-      GameEngine.setInput(room.simulation, user.id, m, Date.now());
+    if (m.t === 'in') {
+      // Pacote do jogador convidado: retransmitir ao anfitrião da sala, sem interpretar a jogabilidade.
+      const host = room.players.get(room.playerHostId);
+      if (host && host.id !== user.id) send(host.ws, { t: 'in', from: user.id, d: String(m.d || '').slice(0, 12000) });
       return;
     }
-    if (m.t === 'appearance') {
-      GameEngine.setAppearance(room.simulation, user.id, m);
+    if (m.t === 'st') {
+      // Estado do anfitrião: retransmitir apenas ao destinatário indicado na mesma sala.
+      const targetId = String(m.to || '');
+      const target = room.players.get(targetId);
+      if (target && target.id !== user.id) send(target.ws, { t: 'st', from: user.id, d: String(m.d || '').slice(0, 12000) });
       return;
     }
-    // Retransmissão WebRTC antiga desativada no Online autoritativo.
-    if (m.t === 'in' || m.t === 'st') return;
+    if (m.t === 'appearance') return;
   });
 
   ws.on('close', () => {
