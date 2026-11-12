@@ -196,7 +196,7 @@ function createRoom(mode) {
     // não ocupa vaga e nunca é transferido para um jogador real.
     hostId: SystemHost.ID, playerHostId: null, systemHost: null,
     started: false, countdown: null, createdAt: Date.now(), idleSince: Date.now(),
-    simulation: GameEngine.createSimulation(mode), simTimer: null, lastTickAt: 0, snapshotAt: 0
+    simulation: null, simTimer: null, lastTickAt: 0, snapshotAt: 0
   };
   SystemHost.attach(room);
   rooms.set(room.id, room);
@@ -251,7 +251,7 @@ function addPlayer(room, user, ws) {
   room.players.set(user.id, player);
   roomByUser.set(user.id, room.id);
   room.idleSince = null;
-  // O servidor continua sendo a autoridade da simulação. O anfitrião humano é apenas um papel de presença, sem poderes de controle.
+  // O servidor gerencia somente presença, matchmaking e retransmissão.
   reselectPlayerHost(room);
   room.hostId = room.playerHostId || SystemHost.ID;
   send(ws, { t: 'joined', host: room.hostId, hostNick: room.players.get(room.hostId)?.nick || SystemHost.PROFILE.nick, isHost: room.playerHostId === user.id, systemHost: true, authoritative: false, mode: room.mode, players: roomPlayers(room) });
@@ -317,7 +317,7 @@ function removePlayer(room, userId, deliberate = false) {
   if (p.reconnectTimer) clearTimeout(p.reconnectTimer);
   if (!deliberate && p.ws) {
     p.ws = null;
-    GameEngine.disconnectPlayer(room.simulation, userId, false);
+    if (room.simulation) GameEngine.disconnectPlayer(room.simulation, userId, false);
     reselectPlayerHost(room);
     room.hostId = room.playerHostId || SystemHost.ID;
     p.reconnectTimer = setTimeout(() => {
@@ -330,7 +330,7 @@ function removePlayer(room, userId, deliberate = false) {
   persistMatchResult(room, p);
   room.players.delete(userId);
   roomByUser.delete(userId);
-  GameEngine.disconnectPlayer(room.simulation, userId, true);
+  if (room.simulation) GameEngine.disconnectPlayer(room.simulation, userId, true);
   reselectPlayerHost(room);
   room.hostId = room.playerHostId || SystemHost.ID;
   // O host virtual nunca sai. Quando o último jogador real sai, a sala fica
@@ -338,7 +338,7 @@ function removePlayer(room, userId, deliberate = false) {
   if (!room.started && room.players.size < 2) clearCountdown(room);
   roster(room);
   if (room.players.size === 0) {
-    SystemHost.resetIdleRoom(room, GameEngine);
+    // Sala mantida sem simulação de jogo; o sistema apenas conserva a presença/room.
     console.info('[room] system_host_kept_idle_room', JSON.stringify({ roomId: room.id, hostId: room.hostId, mode: room.mode }));
   }
 }
@@ -509,8 +509,36 @@ wss.on('connection', (ws, req, user) => {
       send(ws, { t: 'left', roomId: leavingRoomId });
       return;
     }
+    if (m.t === 'avatar') {
+      const a = m.a;
+      if (!a || typeof a !== 'object' || JSON.stringify(a).length > 12000) return;
+      const clean = {
+        x: Math.max(-100000, Math.min(100000, Number(a.x) || 0)),
+        y: Math.max(-100000, Math.min(100000, Number(a.y) || 0)),
+        d: Number.isFinite(Number(a.d)) ? Number(a.d) : 0,
+        l: Math.max(1, Math.min(10000, Math.floor(Number(a.l) || 1))),
+        al: a.al ? 1 : 0,
+        r: Math.max(4, Math.min(40, Number(a.r) || 10)),
+        c: /^#[0-9a-f]{6}$/i.test(String(a.c || '')) ? String(a.c) : '#ffffff',
+        n: String(a.n || user.nick || 'Jogador').slice(0, 24),
+        sk: String(a.sk || 'liso').slice(0, 20), ac: String(a.ac || 'nenhum').slice(0, 20),
+        ta: String(a.ta || 'normal').slice(0, 20), rt: String(a.rt || 'nenhum').slice(0, 24),
+        ht: String(a.ht || 'nenhum').slice(0, 24), cl: String(a.cl || 'nenhum').slice(0, 24),
+        g: Array.isArray(a.g) ? a.g.slice(0, 240).map(v => Math.max(-100000, Math.min(100000, Math.round(Number(v) || 0)))) : []
+      };
+      const p = room.players.get(user.id); if (p) p.lastAvatarAt = Date.now();
+      broadcast(room, { t: 'avatar', id: user.id, a: clean }, user.id);
+      return;
+    }
+    if (m.t === 'result') {
+      const p = room.players.get(user.id); if (!p) return;
+      const r = m.r && typeof m.r === 'object' ? m.r : {};
+      p.lastResult = { score: Math.max(0, Math.min(1000000000, Math.floor(Number(r.score) || 0))), kills: Math.max(0, Math.min(1000000, Math.floor(Number(r.kills) || 0))), size: Math.max(1, Math.min(10000, Math.floor(Number(r.size) || 1))), duration_ms: Math.max(0, Math.min(86400000, Math.floor(Number(r.duration_ms) || 0))), outcome: String(r.outcome || 'leave').slice(0, 20), receivedAt: Date.now() };
+      console.info('[match] client_result_received', JSON.stringify({ userId: user.id, roomId: room.id, ...p.lastResult }));
+      return;
+    }
     if (m.t === 'in') {
-      // Pacote do jogador convidado: retransmitir ao anfitrião da sala, sem interpretar a jogabilidade.
+      // Compatibilidade temporária com clientes antigos; o relay novo usa avatar.
       const host = room.players.get(room.playerHostId);
       if (host && host.id !== user.id) send(host.ws, { t: 'in', from: user.id, d: String(m.d || '').slice(0, 12000) });
       return;
