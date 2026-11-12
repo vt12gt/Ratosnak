@@ -232,6 +232,7 @@ function createRoom(mode) {
     sharedDrops: new Map(),
     killCounts: new Map(),
     alivePlayers: new Map(),
+    deathCredited: new Set(),
     botDeathAt: new Map(),
     hostId: null,
     hostType: 'bot-pro',
@@ -574,14 +575,18 @@ wss.on('connection', (ws, req, user) => {
       if (!victimId || !room.players.has(victimId)) return;
       const senderIsHost = user.id === room.hostId;
       if (!senderIsHost && victimId !== user.id) return;
-      if (room.alivePlayers.get(victimId) === false) return;
+      const alreadyDead = room.alivePlayers.get(victimId) === false;
+      if (alreadyDead && !senderIsHost) return;
       room.alivePlayers.set(victimId, false);
       const requestedKiller = String(m.killerId || '');
       const killerId = requestedKiller && room.players.has(requestedKiller) && requestedKiller !== victimId
         ? (senderIsHost ? requestedKiller : '')
         : '';
-      if (killerId) room.killCounts.set(killerId, Number(room.killCounts.get(killerId) || 0) + 1);
-      broadcast(room, { t: 'player_death', victimId, killerId, mode: room.mode, at: Date.now() });
+      if (killerId && !room.deathCredited.has(victimId)) {
+        room.deathCredited.add(victimId);
+        room.killCounts.set(killerId, Number(room.killCounts.get(killerId) || 0) + 1);
+      }
+      if (!alreadyDead || killerId) broadcast(room, { t: 'player_death', victimId, killerId, mode: room.mode, at: Date.now() });
       return;
     }
     if (m.t === 'world_event') {
@@ -655,7 +660,7 @@ wss.on('connection', (ws, req, user) => {
       const durationMs = Math.max(0, Math.min(86400000, Math.floor(Number(r.duration_ms) || 0)));
       room.results.set(user.id, {
         id: user.id, nick: String(user.nick || 'Jogador').slice(0, 24),
-        score, kills: Math.max(kills, Number(room.killCounts.get(user.id) || 0)), size, duration_ms: durationMs,
+        score, kills: Number(room.killCounts.get(user.id) || 0), size, duration_ms: durationMs,
         outcome: String(r.outcome || 'finished').slice(0, 24), updatedAt: Date.now()
       });
       const ranking = [...room.results.values()].sort((a, b) =>
@@ -688,7 +693,7 @@ wss.on('connection', (ws, req, user) => {
       };
       sender.lastAvatarAt = now;
       sender.lastAvatar = { x: avatar.x, y: avatar.y, r: avatar.r, at: now };
-      if (avatar.al) room.alivePlayers.set(user.id, true);
+      if (avatar.al) { room.alivePlayers.set(user.id, true); room.deathCredited.delete(user.id); }
       broadcast(room, { t: 'avatar', id: user.id, a: avatar }, user.id);
       if (!room.startedAt) room.startedAt = now;
       if (now - Number(room.lastClockBroadcastAt || 0) >= 1000) {
