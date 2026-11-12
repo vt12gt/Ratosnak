@@ -228,6 +228,7 @@ function createRoom(mode) {
     roomKey: roomKeyForMode(mode),
     id: crypto.randomUUID(),
     players: new Map(),
+    results: new Map(),
     hostId: null,
     hostType: 'bot-pro',
     started: false,
@@ -561,6 +562,25 @@ wss.on('connection', (ws, req, user) => {
       removePlayer(room, user.id, true);
       console.info('[room] player_leave_ack', JSON.stringify({ userId: user.id, roomId: leavingRoomId, mode: leavingMode, wasHost, command: m.t === 'leave' ? 'leave' : 'end' }));
       send(ws, { t: 'left', roomId: leavingRoomId });
+      return;
+    }
+    if (m.t === 'result') {
+      const r = m.r && typeof m.r === 'object' ? m.r : {};
+      const score = Math.max(0, Math.min(1000000000, Math.floor(Number(r.score) || 0)));
+      const kills = Math.max(0, Math.min(1000000, Math.floor(Number(r.kills) || 0)));
+      const size = Math.max(1, Math.min(1000000, Math.floor(Number(r.size) || 1)));
+      const durationMs = Math.max(0, Math.min(86400000, Math.floor(Number(r.duration_ms) || 0)));
+      room.results.set(user.id, {
+        id: user.id, nick: String(user.nick || 'Jogador').slice(0, 24),
+        score, kills, size, duration_ms: durationMs,
+        outcome: String(r.outcome || 'finished').slice(0, 24), updatedAt: Date.now()
+      });
+      const ranking = [...room.results.values()].sort((a, b) =>
+        room.mode === 'survival'
+          ? (b.duration_ms - a.duration_ms) || (b.kills - a.kills)
+          : (b.score - a.score) || (b.kills - a.kills)
+      ).slice(0, MAX_PLAYERS);
+      broadcast(room, { t: 'match_ranking', roomId: room.id, mode: room.mode, ranking });
       return;
     }
     if (m.t === 'avatar') {
