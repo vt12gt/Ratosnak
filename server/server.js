@@ -482,10 +482,10 @@ wss.on('connection', (ws, req, user) => {
         addPlayer(room, user, ws);
         return;
       }
-      const allowedModes = new Set(['quick']);
+      const allowedModes = new Set(['quick', 'treino']);
       const requestedMode = String(m.mode || 'quick');
       if (!allowedModes.has(requestedMode)) {
-        send(ws, { t: 'mode_unsupported', mode: requestedMode, supported: ['quick'] });
+        send(ws, { t: 'mode_unsupported', mode: requestedMode, supported: ['quick', 'treino'] });
         return;
       }
       const selectedMode = requestedMode;
