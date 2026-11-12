@@ -231,6 +231,8 @@ function createRoom(mode) {
     hostId: null,
     hostType: 'bot-pro',
     started: false,
+    startedAt: 0,
+    lastClockBroadcastAt: 0,
     countdown: null,
     createdAt: Date.now()
   };
@@ -293,9 +295,10 @@ function addPlayer(room, user, ws) {
   player.reconnectTimer = null;
   room.players.set(user.id, player);
   roomByUser.set(user.id, room.id);
+  if (room.started && !room.startedAt) room.startedAt = Date.now();
   if (!room.hostId) room.hostId = user.id;
   const isHost = room.hostId === user.id;
-  send(ws, { t: 'joined', roomId: room.id, host: room.hostId, isHost, hostType: room.hostType, hostLabel: 'Bot Pro', mode: room.mode, roomKey: room.roomKey, players: roomPlayers(room) });
+  send(ws, { t: 'joined', roomId: room.id, host: room.hostId, isHost, hostType: room.hostType, hostLabel: 'Bot Pro', mode: room.mode, roomKey: room.roomKey, roomElapsedMs: room.startedAt ? Math.max(0, Date.now() - room.startedAt) : 0, players: roomPlayers(room) });
   if (isHost) {
     // Host does not need a peer_join event for itself.
   } else {
@@ -545,6 +548,7 @@ wss.on('connection', (ws, req, user) => {
       room = firstAvailableRoom(selectedMode);
       // A solo player starts immediately with local AI bots; later real players join this live room.
       room.started = true;
+      if (!room.startedAt) room.startedAt = Date.now();
       addPlayer(room, user, ws);
       return;
     }
@@ -557,6 +561,35 @@ wss.on('connection', (ws, req, user) => {
       removePlayer(room, user.id, true);
       console.info('[room] player_leave_ack', JSON.stringify({ userId: user.id, roomId: leavingRoomId, mode: leavingMode, wasHost, command: m.t === 'leave' ? 'leave' : 'end' }));
       send(ws, { t: 'left', roomId: leavingRoomId });
+      return;
+    }
+    if (m.t === 'avatar') {
+      // Retransmissão de estado visual: o cliente controla a própria cobra;
+      // o servidor apenas valida o formato básico e distribui aos demais jogadores.
+      const a = m.a && typeof m.a === 'object' ? m.a : null;
+      const now = Date.now();
+      const sender = room.players.get(user.id);
+      if (!a || !sender || (sender.lastAvatarAt && now - sender.lastAvatarAt < 55)) return;
+      const x = Number(a.x), y = Number(a.y), d = Number(a.d);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(d)) return;
+      const g = Array.isArray(a.g) ? a.g.slice(0, 180).map(Number).filter(Number.isFinite) : [];
+      const avatar = {
+        x: Math.max(-1000000, Math.min(1000000, x)),
+        y: Math.max(-1000000, Math.min(1000000, y)),
+        d, l: Math.max(1, Math.min(10000, Math.floor(Number(a.l) || 1))),
+        al: a.al ? 1 : 0, r: Math.max(4, Math.min(40, Number(a.r) || 10)),
+        c: String(a.c || '').slice(0, 24), n: String(a.n || user.nick || 'Jogador').slice(0, 24),
+        sk: String(a.sk || 'liso').slice(0, 24), ac: String(a.ac || 'nenhum').slice(0, 24),
+        ta: String(a.ta || 'normal').slice(0, 24), rt: String(a.rt || 'nenhum').slice(0, 24),
+        ht: String(a.ht || 'nenhum').slice(0, 24), cl: String(a.cl || 'nenhum').slice(0, 24), g
+      };
+      sender.lastAvatarAt = now;
+      broadcast(room, { t: 'avatar', id: user.id, a: avatar }, user.id);
+      if (!room.startedAt) room.startedAt = now;
+      if (now - Number(room.lastClockBroadcastAt || 0) >= 1000) {
+        room.lastClockBroadcastAt = now;
+        broadcast(room, { t: 'room_clock', roomId: room.id, mode: room.mode, elapsedMs: Math.max(0, now - room.startedAt), serverTime: now });
+      }
       return;
     }
     if (m.t === 'in') {
