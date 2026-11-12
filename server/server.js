@@ -603,8 +603,13 @@ wss.on('connection', (ws, req, user) => {
       }
       if (e.kind === 'drops') {
         const source = String(e.source || '');
-        if ((source === 'bot' && !senderIsHost) || (source === 'player' && !room.players.has(user.id))) return;
         if (!['bot', 'player'].includes(source)) return;
+        const victimId = String(e.victimId || '');
+        if (source === 'bot' && !senderIsHost) return;
+        if (source === 'player') {
+          if (!victimId || !room.players.has(victimId) || room.alivePlayers.get(victimId) !== false) return;
+          if (!senderIsHost && victimId !== user.id) return;
+        }
         const input = Array.isArray(e.items) ? e.items.slice(0, 180) : [];
         const items = [];
         for (const raw of input) {
@@ -632,6 +637,10 @@ wss.on('connection', (ws, req, user) => {
       const dropId = String(m.dropId || '');
       const drop = room.sharedDrops.get(dropId);
       if (!drop || drop.claimedBy) return;
+      const avatar = room.players.get(user.id)?.lastAvatar;
+      if (!avatar || Date.now() - Number(avatar.at || 0) > 1500) return;
+      const reach = Math.max(65, Number(drop.r || 6) + Number(avatar.r || 10) + 24);
+      if (Math.hypot(Number(avatar.x) - drop.x, Number(avatar.y) - drop.y) > reach) return;
       drop.claimedBy = user.id;
       drop.claimedAt = Date.now();
       room.sharedDrops.delete(dropId);
@@ -678,6 +687,7 @@ wss.on('connection', (ws, req, user) => {
         ht: String(a.ht || 'nenhum').slice(0, 24), cl: String(a.cl || 'nenhum').slice(0, 24), g
       };
       sender.lastAvatarAt = now;
+      sender.lastAvatar = { x: avatar.x, y: avatar.y, r: avatar.r, at: now };
       if (avatar.al) room.alivePlayers.set(user.id, true);
       broadcast(room, { t: 'avatar', id: user.id, a: avatar }, user.id);
       if (!room.startedAt) room.startedAt = now;
