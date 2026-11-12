@@ -229,6 +229,8 @@ function createRoom(mode) {
     id: crypto.randomUUID(),
     players: new Map(),
     results: new Map(),
+    sharedDrops: new Map(),
+    killCounts: new Map(),
     hostId: null,
     hostType: 'bot-pro',
     started: false,
@@ -564,6 +566,56 @@ wss.on('connection', (ws, req, user) => {
       send(ws, { t: 'left', roomId: leavingRoomId });
       return;
     }
+    if (m.t === 'world_event') {
+      const e = m.event && typeof m.event === 'object' ? m.event : {};
+      const senderIsHost = user.id === room.hostId;
+      if (e.kind === 'bot_death') {
+        if (!senderIsHost) return;
+        const botIndex = Math.floor(Number(e.botIndex));
+        if (!Number.isInteger(botIndex) || botIndex < 0 || botIndex > 100) return;
+        const killerId = String(e.killerId || '');
+        if (killerId && !room.players.has(killerId)) return;
+        if (killerId) room.killCounts.set(killerId, Number(room.killCounts.get(killerId) || 0) + 1);
+        broadcast(room, { t: 'bot_death', botIndex, killerId, mode: room.mode, at: Date.now() });
+        return;
+      }
+      if (e.kind === 'drops') {
+        const source = String(e.source || '');
+        if ((source === 'bot' && !senderIsHost) || (source === 'player' && !room.players.has(user.id))) return;
+        if (!['bot', 'player'].includes(source)) return;
+        const input = Array.isArray(e.items) ? e.items.slice(0, 180) : [];
+        const items = [];
+        for (const raw of input) {
+          if (!raw || typeof raw !== 'object') continue;
+          const x = Number(raw.x), y = Number(raw.y), radius = Number(raw.r);
+          if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(radius)) continue;
+          const id = crypto.randomUUID();
+          const item = {
+            id, x: Math.max(-1000000, Math.min(1000000, x)),
+            y: Math.max(-1000000, Math.min(1000000, y)),
+            type: Math.max(0, Math.min(8, Math.floor(Number(raw.type) || 0))),
+            color: /^#[0-9a-f]{6}$/i.test(String(raw.color || '')) ? String(raw.color) : '#ffd23e',
+            r: Math.max(3, Math.min(30, radius))
+          };
+          room.sharedDrops.set(id, { ...item, createdAt: Date.now(), claimedBy: null });
+          items.push(item);
+        }
+        while (room.sharedDrops.size > 600) room.sharedDrops.delete(room.sharedDrops.keys().next().value);
+        if (items.length) broadcast(room, { t: 'drops_spawned', items, source, sourceId: user.id });
+        return;
+      }
+      return;
+    }
+    if (m.t === 'drop_claim') {
+      const dropId = String(m.dropId || '');
+      const drop = room.sharedDrops.get(dropId);
+      if (!drop || drop.claimedBy) return;
+      drop.claimedBy = user.id;
+      drop.claimedAt = Date.now();
+      room.sharedDrops.delete(dropId);
+      broadcast(room, { t: 'drop_claimed', dropId, collectorId: user.id, nick: String(user.nick || 'Jogador').slice(0, 24) });
+      return;
+    }
     if (m.t === 'result') {
       const r = m.r && typeof m.r === 'object' ? m.r : {};
       const score = Math.max(0, Math.min(1000000000, Math.floor(Number(r.score) || 0)));
@@ -572,7 +624,7 @@ wss.on('connection', (ws, req, user) => {
       const durationMs = Math.max(0, Math.min(86400000, Math.floor(Number(r.duration_ms) || 0)));
       room.results.set(user.id, {
         id: user.id, nick: String(user.nick || 'Jogador').slice(0, 24),
-        score, kills, size, duration_ms: durationMs,
+        score, kills: Math.max(kills, Number(room.killCounts.get(user.id) || 0)), size, duration_ms: durationMs,
         outcome: String(r.outcome || 'finished').slice(0, 24), updatedAt: Date.now()
       });
       const ranking = [...room.results.values()].sort((a, b) =>
