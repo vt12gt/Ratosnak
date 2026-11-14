@@ -1,25 +1,31 @@
-# Navega PE — protótipo 0.1
+# Navega PE — protótipo 0.2
 
-Aplicativo de navegação experimental iniciado para Recife e Pernambuco.
+Navegador experimental para Recife e Pernambuco.
 
-## Recursos desta versão
-- Mapa interativo Leaflet com OpenStreetMap.
-- GPS do aparelho e precisão informada pelo sistema.
-- Busca de destinos com Nominatim.
-- Rotas online por Valhalla para carro, moto, caminhão, bicicleta e pedestre.
-- Instruções de manobra e voz do navegador.
-- Seleção de destino tocando no mapa.
-- Favoritos salvos localmente.
-- PWA: instalação na tela inicial e cache do app shell.
-- Cache oportunista de blocos de mapa já visualizados.
+## Recursos
+- Mapa interativo com dados © OpenStreetMap contributors.
+- GPS contínuo e acompanhamento da localização.
+- Rotas online para carro, moto, caminhão, bicicleta e pedestre.
+- Instruções de manobra e avisos por voz.
+- Busca de destinos e escolha de ponto diretamente no mapa.
+- Favoritos salvos no aparelho.
+- Busca de pontos de referência próximos: hospitais, postos, restaurantes, estacionamentos, farmácias e atrações cadastradas no OpenStreetMap.
+- Marcadores de pontos de interesse podem ser escolhidos como destino.
+- Interface móvel com mapa em tela cheia e painel recolhível.
 
-## Testar
-Abra a página publicada em HTTPS e permita localização. Para GitHub Pages, configure a publicação a partir da branch main e da pasta raiz, ou publique o diretório /mapa conforme a configuração do repositório.
+## Teste
+https://vt12gt.github.io/Ratosnak/mapa/
 
-## Limitações importantes
-Esta versão ainda não baixa pacotes completos por cidade/estado e não calcula rotas sem internet. O cache de blocos consultados não é um pacote offline garantido. Busca e roteamento usam serviços públicos de demonstração sujeitos a limites. A opção de acessibilidade é experimental e ainda não garante rotas acessíveis. As estimativas não incluem trânsito ao vivo.
+## Limitações
+A busca de pontos próximos usa o serviço Overpass público e pode sofrer limites ou indisponibilidade. A quantidade e qualidade de nomes, números de porta e pontos de interesse depende do cadastro colaborativo do OpenStreetMap. A ausência de um local no resultado não prova que ele não exista.
 
-## Próxima versão
-O plano técnico do aplicativo Android nativo, com mapas regionais offline e roteamento local, está em [PLANO_ANDROID_OFFLINE.md](./PLANO_ANDROID_OFFLINE.md). A compatibilidade da versão atual dos tiles brasileiros com a biblioteca Android do Valhalla precisa ser validada antes de ativar downloads de rotas.
+Esta versão ainda depende de internet para carregar blocos de mapa que não foram vistos, pesquisar destinos, consultar pontos de interesse e calcular rotas. O cache do navegador não representa download offline completo. O roteamento offline e os pacotes regionais fazem parte do aplicativo Android futuro.
+
+O mapa padrão usa exclusivamente o endpoint oficial `https://tile.openstreetmap.org/{z}/{x}/{y}.png`, com atribuição visível. Os servidores padrão do OSM não permitem baixar cidades ou regiões em massa para uso offline; para isso será necessário contratar um provedor que autorize explicitamente o uso offline ou hospedar nossos próprios tiles. Consulte a política oficial: https://operations.osmfoundation.org/policies/tiles/
+
+A opção de acessibilidade ainda é experimental e não garante rotas acessíveis. Estimativas de tempo não incluem trânsito ao vivo.
+
+## Plano Android offline
+Consulte [PLANO_ANDROID_OFFLINE.md](./PLANO_ANDROID_OFFLINE.md).
 
 Dados cartográficos © OpenStreetMap contributors.
