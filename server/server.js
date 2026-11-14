@@ -20,6 +20,8 @@ const MAX_PLAYERS = 4;
 const COUNTDOWN_MS = 5000;
 const RECONNECT_GRACE_MS = 30000;
 
+function roomKeyForMode(mode) { return String(mode || 'quick').toUpperCase(); }
+
 const rooms = new Map();
 const socketsByUser = new Map();
 const roomByUser = new Map();
@@ -146,21 +148,13 @@ async function authenticate(token) {
   return { ...user, token, announcementRoles: roles };
 }
 
-function reselectPlayerHost(room) {
-  const online = [...room.players.values()].filter(p => p.ws && p.ws.readyState === WebSocket.OPEN);
-  online.sort((a, b) => {
-    const rank = p => p.staffRole === 'founder' ? 0 : p.staffRole === 'spadmin' ? 1 : 2;
-    return rank(a) - rank(b) || (a.joinedAt || 0) - (b.joinedAt || 0) || String(a.id).localeCompare(String(b.id));
-  });
-  room.playerHostId = online.length ? online[0].id : null;
-  return room.playerHostId;
-}
+function reselectPlayerHost(room) { room.playerHostId = null; room.hostId = SystemHost.ID; return null; }
 function roomPlayers(room) {
   const realPlayers = [...room.players.values()].map(p => ({
     id: p.id, nick: p.nick, level: p.level || 1,
     online: !!(p.ws && p.ws.readyState === WebSocket.OPEN),
     system: false, role: p.staffRole || 'player', staffRole: p.staffRole || '',
-    isRoomHost: p.id === room.playerHostId
+    isRoomHost: false
   }));
   return SystemHost.roster(room, realPlayers);
 }
@@ -172,7 +166,10 @@ function broadcast(room, message, exceptId) {
 }
 function roster(room) {
   const players = roomPlayers(room);
-  for (const p of room.players.values()) send(p.ws, { t: 'roster', mode: room.mode, authoritative: true, host: room.playerHostId || SystemHost.ID, players });
+  for (const p of room.players.values()) send(p.ws, {
+    t: 'roster', mode: room.mode, roomKey: room.roomKey,
+    authoritative: true, host: SystemHost.ID, players
+  });
 }
 function clearCountdown(room) {
   if (room.countdown) clearTimeout(room.countdown);
@@ -191,12 +188,12 @@ function destroyRoom(room, notify = true) {
 }
 function createRoom(mode) {
   const room = {
-    mode, id: crypto.randomUUID(), players: new Map(),
-    // O anfitrião é uma entidade interna do servidor: não usa WebSocket,
-    // não ocupa vaga e nunca é transferido para um jogador real.
-    hostId: SystemHost.ID, playerHostId: null, systemHost: null,
-    started: false, countdown: null, createdAt: Date.now(), idleSince: Date.now(),
-    simulation: null, simTimer: null, lastTickAt: 0, snapshotAt: 0
+    mode, roomKey: roomKeyForMode(mode), id: crypto.randomUUID(),
+    players: new Map(), hostId: SystemHost.ID, playerHostId: null,
+    systemHost: null, started: false, countdown: null,
+    createdAt: Date.now(), idleSince: Date.now(),
+    simulation: GameEngine.createSimulation(mode), simTimer: null,
+    lastTickAt: 0, snapshotAt: 0
   };
   SystemHost.attach(room);
   rooms.set(room.id, room);
@@ -204,14 +201,13 @@ function createRoom(mode) {
   return room;
 }
 function startRoomSimulation(room) {
-  // A simulação do servidor foi desativada: o jogo local é a autoridade da jogabilidade.
-  // O servidor apenas mantém a sala e retransmite pacotes entre os clientes.
-  return;
   if (room.simTimer) return;
+  if (!room.simulation || !room.simulation.running) room.simulation = GameEngine.createSimulation(room.mode);
+  for (const p of room.players.values()) GameEngine.addPlayer(room.simulation, p);
   room.lastTickAt = Date.now();
   room.snapshotAt = 0;
   room.simTimer = setInterval(() => {
-    if (!rooms.has(room.id) || !room.started) return;
+    if (!rooms.has(room.id) || !room.started || !room.simulation) return;
     const now = Date.now();
     const dt = Math.min(.08, Math.max(.01, (now - room.lastTickAt) / 1000));
     room.lastTickAt = now;
@@ -221,7 +217,7 @@ function startRoomSimulation(room) {
     for (const p of room.players.values()) {
       if (!p.ws || p.ws.readyState !== WebSocket.OPEN) continue;
       const state = GameEngine.snapshotFor(room.simulation, p.id);
-      if (state) send(p.ws, state);
+      if (state) send(p.ws, { t: 'st', from: SystemHost.ID, d: JSON.stringify(state) });
     }
   }, GameEngine.TICK_MS);
   if (typeof room.simTimer.unref === 'function') room.simTimer.unref();
@@ -239,24 +235,38 @@ function startCountdown(room) {
     if (!rooms.has(room.id) || room.players.size < 2) return;
     room.started = true;
     startRoomSimulation(room);
-    broadcast(room, { t: 'start', mode: room.mode, authoritative: false });
+    broadcast(room, { t: 'start', mode: room.mode, roomKey: room.roomKey, authoritative: true });
   }, COUNTDOWN_MS);
-  broadcast(room, { t: 'countdown', ms: COUNTDOWN_MS, mode: room.mode });
+  broadcast(room, { t: 'countdown', ms: COUNTDOWN_MS, mode: room.mode, roomKey: room.roomKey });
 }
 function addPlayer(room, user, ws) {
   const old = room.players.get(user.id);
   if (old && old.reconnectTimer) clearTimeout(old.reconnectTimer);
-  const player = old || { id: user.id, nick: user.nick, level: user.level || 1, ws: null, reconnectTimer: null, slot: room.players.size, joinedAt: Date.now(), matchId: crypto.randomUUID(), matchStartedAt: Date.now(), recordSaved: false };
-  player.nick = user.nick; player.level = user.level || 1; player.staffRole = (user.announcementRoles || []).includes('founder') ? 'founder' : (user.announcementRoles || []).includes('spadmin') ? 'spadmin' : ''; player.ws = ws; player.reconnectTimer = null;
+  const player = old || {
+    id: user.id, nick: user.nick, level: user.level || 1, ws: null,
+    reconnectTimer: null, slot: room.players.size, joinedAt: Date.now(),
+    matchId: crypto.randomUUID(), matchStartedAt: Date.now(), recordSaved: false
+  };
+  player.nick = user.nick;
+  player.level = user.level || 1;
+  player.staffRole = (user.announcementRoles || []).includes('founder') ? 'founder' :
+    (user.announcementRoles || []).includes('spadmin') ? 'spadmin' : '';
+  player.ws = ws;
+  player.reconnectTimer = null;
   room.players.set(user.id, player);
   roomByUser.set(user.id, room.id);
   room.idleSince = null;
-  // O servidor gerencia somente presença, matchmaking e retransmissão.
-  reselectPlayerHost(room);
-  room.hostId = room.playerHostId || SystemHost.ID;
-  send(ws, { t: 'joined', host: room.hostId, hostNick: room.players.get(room.hostId)?.nick || SystemHost.PROFILE.nick, isHost: room.playerHostId === user.id, systemHost: true, authoritative: false, mode: room.mode, players: roomPlayers(room) });
+  room.hostId = SystemHost.ID;
+  if (!room.simulation || !room.simulation.running) room.simulation = GameEngine.createSimulation(room.mode);
+  GameEngine.addPlayer(room.simulation, player);
+  send(ws, {
+    t: 'joined', roomId: room.id, host: SystemHost.ID,
+    hostNick: SystemHost.PROFILE.nick, isHost: false, systemHost: true,
+    authoritative: true, mode: room.mode, roomKey: room.roomKey,
+    players: roomPlayers(room)
+  });
   if (room.started) {
-    send(ws, { t: 'start', mode: room.mode, authoritative: false });
+    send(ws, { t: 'start', mode: room.mode, roomKey: room.roomKey, authoritative: true });
     startRoomSimulation(room);
   } else {
     startCountdown(room);
@@ -318,8 +328,6 @@ function removePlayer(room, userId, deliberate = false) {
   if (!deliberate && p.ws) {
     p.ws = null;
     if (room.simulation) GameEngine.disconnectPlayer(room.simulation, userId, false);
-    reselectPlayerHost(room);
-    room.hostId = room.playerHostId || SystemHost.ID;
     p.reconnectTimer = setTimeout(() => {
       if (p.ws) return;
       removePlayer(room, userId, true);
@@ -331,16 +339,12 @@ function removePlayer(room, userId, deliberate = false) {
   room.players.delete(userId);
   roomByUser.delete(userId);
   if (room.simulation) GameEngine.disconnectPlayer(room.simulation, userId, true);
-  reselectPlayerHost(room);
-  room.hostId = room.playerHostId || SystemHost.ID;
-  // O host virtual nunca sai. Quando o último jogador real sai, a sala fica
-  // reservada pelo sistema e pronta para receber o próximo jogador.
-  if (!room.started && room.players.size < 2) clearCountdown(room);
-  roster(room);
-  if (room.players.size === 0) {
-    // Sala mantida sem simulação de jogo; o sistema apenas conserva a presença/room.
-    console.info('[room] system_host_kept_idle_room', JSON.stringify({ roomId: room.id, hostId: room.hostId, mode: room.mode }));
+  if (!room.players.size) {
+    SystemHost.resetIdleRoom(room, GameEngine);
+    console.info('[room] system_host_kept_idle_room', JSON.stringify({ roomId: room.id, hostId: SystemHost.ID, mode: room.mode }));
+    return;
   }
+  roster(room);
 }
 
 const server = http.createServer(async (req, res) => {
@@ -354,10 +358,10 @@ const server = http.createServer(async (req, res) => {
   try {
     if (url.pathname === '/health' && req.method === 'GET') {
       return json(res, 200, {
-        ok: true, service: 'rato-snack-realtime', version: '1.2.0-server-authoritative-host-election',
+        ok: true, service: 'rato-snack-realtime', version: '1.3.0-server-authoritative-system-host',
         rooms: rooms.size, onlinePlayers: socketsByUser.size,
         systemHost: { id: SystemHost.ID, nick: SystemHost.PROFILE.nick, alwaysPresent: true },
-        hostPriority: ['founder', 'spadmin', 'player'],
+        authoritativeSimulation: true,
         idleRooms: [...rooms.values()].filter(room => room.players.size === 0).length
       }, origin);
     }
@@ -538,16 +542,27 @@ wss.on('connection', (ws, req, user) => {
       return;
     }
     if (m.t === 'in') {
-      // Compatibilidade temporária com clientes antigos; o relay novo usa avatar.
-      const host = room.players.get(room.playerHostId);
-      if (host && host.id !== user.id) send(host.ws, { t: 'in', from: user.id, d: String(m.d || '').slice(0, 12000) });
+      let input;
+      try { input = JSON.parse(String(m.d || '{}')); } catch (_) { return; }
+      if (!input || typeof input !== 'object' || JSON.stringify(input).length > 12000) return;
+      if (room.simulation) {
+        GameEngine.setAppearance(room.simulation, user.id, {
+          color: input.col, skin: input.sk, rat: input.rat,
+          hat: input.hat, cloth: input.cloth
+        });
+        GameEngine.setInput(room.simulation, user.id, {
+          a: input.a, b: input.b, p: input.away === true
+        }, Date.now());
+      }
       return;
     }
-    if (m.t === 'st') {
-      // Estado do anfitrião: retransmitir apenas ao destinatário indicado na mesma sala.
-      const targetId = String(m.to || '');
-      const target = room.players.get(targetId);
-      if (target && target.id !== user.id) send(target.ws, { t: 'st', from: user.id, d: String(m.d || '').slice(0, 12000) });
+    if (m.t === 'input') {
+      if (!room.simulation) return;
+      GameEngine.setInput(room.simulation, user.id, m.input || m, Date.now());
+      return;
+    }
+    if (m.t === 'appearance') {
+      if (room.simulation) GameEngine.setAppearance(room.simulation, user.id, m.a || {});
       return;
     }
     if (m.t === 'appearance') return;
