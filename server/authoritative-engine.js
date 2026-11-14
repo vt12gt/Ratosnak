@@ -12,10 +12,11 @@ const MAX_LENGTH = 220;
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function angleDelta(a, b) { return Math.atan2(Math.sin(b - a), Math.cos(b - a)); }
 function random(min, max) { return min + Math.random() * (max - min); }
+let nextFoodId = 1;
 function makeFood() {
   const roll = Math.random();
   const type = roll < .78 ? 0 : roll < .91 ? 1 : roll < .95 ? 2 : roll < .98 ? 5 : 3;
-  return { x: random(45, WORLD_W - 45), y: random(45, WORLD_H - 45), type, r: type === 1 ? 9 : 6, color: type === 1 ? '#ffd23e' : type === 2 ? '#7dd3fc' : type === 3 ? '#86efac' : type === 5 ? '#c4b5fd' : '#f9a8d4' };
+  return { id: nextFoodId++, x: random(45, WORLD_W - 45), y: random(45, WORLD_H - 45), type, r: type === 1 ? 9 : 6, color: type === 1 ? '#ffd23e' : type === 2 ? '#7dd3fc' : type === 3 ? '#86efac' : type === 5 ? '#c4b5fd' : '#f9a8d4' };
 }
 function makePlayer(user) {
   const x = random(350, WORLD_W - 350), y = random(350, WORLD_H - 350);
@@ -27,7 +28,7 @@ function makePlayer(user) {
     paused: false, connected: true, respawnAt: 0, score: 0, kills: 0,
     boostEnergy: 100, magnetUntil: 0, growUntil: 0, segments: [],
     input: { angle, boost: false, paused: false }, lastInputAt: 0,
-    isBot: false, turnRate: 6.2
+    isBot: false, turnRate: 6.2, hat: 'nenhum', cloth: 'nenhum', acc: 'nenhum', tail: 'normal'
   };
 }
 function makeNpc(i) {
@@ -77,6 +78,9 @@ function setAppearance(sim, id, appearance) {
   if (typeof appearance.skin === 'string' && /^[a-z0-9_-]{1,14}$/i.test(appearance.skin)) p.skin = appearance.skin;
   if (typeof appearance.rat === 'string' && /^[a-z0-9_-]{1,20}$/i.test(appearance.rat)) p.rat = appearance.rat;
   if (Number.isFinite(Number(appearance.turnRate))) p.turnRate = clamp(Number(appearance.turnRate), 4.5, 9);
+  for (const key of ['hat', 'cloth', 'acc', 'tail']) {
+    if (typeof appearance[key] === 'string') p[key] = appearance[key].slice(0, 24);
+  }
   return true;
 }
 function moveSnake(p, dt, now) {
@@ -165,14 +169,58 @@ function serialize(p) {
     sh: +p.shield.toFixed(1), ba: p.boostActive ? 1 : 0, s: p.score, k: p.kills || 0, sk: p.skin || 'liso', ac: 'nenhum',
     ta: 'normal', sp: 0, st: 0, rt: p.rat || 'nenhum', g };
 }
+function clientSerialize(p, id) {
+  const g = [];
+  const step = Math.max(1, Math.ceil(p.segments.length / 70));
+  for (let i = 0; i < p.segments.length; i += step) g.push(Math.round(p.segments[i].x), Math.round(p.segments[i].y));
+  return [id, Math.round(p.x), Math.round(p.y), +p.angle.toFixed(3),
+    p.length, p.alive ? 1 : 0, +p.shield.toFixed(1), p.boostActive ? 1 : 0,
+    0, 0, -1, 0, -1, 0, 0, '', 0, g];
+}
+function clientMeta(p, id) {
+  return [id, p.radius, p.color, p.nick, p.skin || 'liso',
+    p.acc || 'nenhum', p.tail || 'normal', p.rat || 'nenhum',
+    p.hat || 'nenhum', p.cloth || 'nenhum'];
+}
 function snapshotFor(sim, id) {
   const me = sim.players.get(String(id));
-  if (!me) return null;
-  const others = [...sim.players.values()].filter(p => p.id !== me.id && p.connected && p.alive).concat(sim.npcs.filter(p => p.alive));
-  const nearbyFood = sim.foods.map(f => ({ f, d: distance2(me, f) })).filter(x => x.d < 1000 * 1000).sort((a, b) => a.d - b.d).slice(0, 55).map(x => x.f);
-  return { t: 'state', st: 1, ar: 0, gt: +sim.time.toFixed(1), sc: me.score,
-    me: serialize(me), o: others.slice(0, 16).map(serialize),
-    f: nearbyFood.map(f => [Math.round(f.x), Math.round(f.y), f.type, f.r, f.color]) };
+  if (!me || !me.connected) return null;
+  const others = [...sim.players.values()].filter(p => p.id !== me.id && p.connected)
+    .concat(sim.npcs.filter(p => p.alive));
+  let nextId = 1;
+  const otherStates = [];
+  const meta = [clientMeta(me, 0)];
+  for (const p of others) {
+    const pid = p.isBot ? 100 + sim.npcs.indexOf(p) : nextId++;
+    otherStates.push(clientSerialize(p, pid));
+    meta.push(clientMeta(p, pid));
+  }
+  const now = Date.now();
+  const full = !me._lastFullSnapshotAt || now - me._lastFullSnapshotAt >= 2000;
+  if (full) me._lastFullSnapshotAt = now;
+  const visibleFoods = sim.foods.map(f => ({ f, d: distance2(me, f) }))
+    .filter(x => x.d < 1000 * 1000).sort((a, b) => a.d - b.d).slice(0, 55);
+  const currentFoods = new Map();
+  const fa = [];
+  for (const item of visibleFoods) {
+    const f = item.f;
+    const value = [f.id, Math.round(f.x), Math.round(f.y), f.type, f.r, f.color];
+    currentFoods.set(f.id, value);
+    const old = me._foodSent && me._foodSent.get(f.id);
+    if (full || !old || Math.abs(old[1] - value[1]) + Math.abs(old[2] - value[2]) >= 3) fa.push(value);
+  }
+  const fr = [];
+  if (me._foodSent && !full) {
+    for (const foodId of me._foodSent.keys()) if (!currentFoods.has(foodId)) fr.push(foodId);
+  }
+  me._foodSent = currentFoods;
+  return {
+    st: 1, q: me._snapshotSeq = (me._snapshotSeq || 0) + 1,
+    full: full ? 1 : 0, md: sim.mode, ts: [0, 0], wv: 1, wk: 0,
+    bk: 0, bd: 0, rt: -1, ar: 0, t: +sim.time.toFixed(2),
+    me: clientSerialize(me, 0), o: otherStates, meta: full ? meta : undefined,
+    fa, fr
+  };
 }
 function tick(sim, dt, now) {
   if (!sim.running) return;
