@@ -1,0 +1,10 @@
+{
+  "name": "Navega PE",
+  "short_name": "Navega PE",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#081522",
+  "theme_color": "#081522",
+  "lang": "pt-BR"
+}
