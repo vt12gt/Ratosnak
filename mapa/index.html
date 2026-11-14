@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
 :root{--bg:#081522;--panel:#102437;--line:#28465d;--txt:#f2f7fb;--muted:#9db2c2;--mint:#37d6c0}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:15px system-ui;overflow:hidden}.app{height:100dvh;display:grid;grid-template-rows:auto 1fr}.top{padding:10px 14px;background:#081522ee;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;z-index:500}.brand{font-size:19px;font-weight:850}.brand span{color:var(--mint)}.small{font-size:11px;color:var(--muted)}.main{min-height:0;display:grid;grid-template-columns:340px 1fr}.side{padding:10px;overflow:auto;border-right:1px solid var(--line)}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:11px;margin-bottom:9px}h2{font-size:14px;margin:0 0 9px}input,select{width:100%;padding:11px;background:#091a29;border:1px solid var(--line);border-radius:10px;color:white;font:inherit}.row{display:flex;gap:7px;margin-top:7px}button{padding:11px;border:0;border-radius:10px;background:var(--mint);color:#05221f;font-weight:750}button.alt{background:#173249;color:white;border:1px solid var(--line)}.row button{flex:1}.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.mode{background:#173249;color:#b4c6d3;font-size:12px;padding:9px 2px}.mode.active{background:#12483f;color:#b7fff1;outline:1px solid var(--mint)}#map{height:100%;width:100%;background:#d7e0e7}#mapStatus{position:absolute;z-index:520;left:50%;top:10px;transform:translateX(-50%);display:none;max-width:calc(100% - 24px);background:#071a2bed;color:#fff;border:1px solid #547187;border-radius:12px;padding:9px 12px;font-size:12px;box-shadow:0 4px 16px #0005;text-align:center}#mapStatus button{margin-left:8px;padding:6px 9px;font-size:11px}.info{font-size:12px;line-height:1.5;color:var(--muted)}#summary{font-size:13px;line-height:1.5;margin-top:9px}#steps{font-size:12px;padding-left:18px;max-height:150px;overflow:auto}#navBanner{display:none;position:absolute;z-index:550;top:12px;left:50%;transform:translateX(-50%);width:min(520px,calc(100% - 24px));background:#071a2bea;border:1px solid #37d6c0;border-radius:14px;padding:11px 14px;box-shadow:0 5px 22px #0009;pointer-events:none}#navInstruction{font-size:15px;font-weight:800;line-height:1.25}#navDistance{font-size:12px;color:#9deee2;margin-top:4px}#followBtn{width:100%;margin-top:7px} .car-arrow{width:34px;height:34px;display:grid;place-items:center;filter:drop-shadow(0 2px 3px #0009)}.car-arrow span{display:block;font-size:30px;line-height:30px;color:#087fdb;text-shadow:-1px -1px white,1px 1px white}#toast{position:fixed;z-index:2000;bottom:15px;left:50%;transform:translateX(-50%);background:#06111d;border:1px solid var(--line);padding:10px 14px;border-radius:10px;display:none;max-width:90%}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:15px system-ui;overflow:hidden}.app{height:100dvh;display:grid;grid-template-rows:auto 1fr}.top{padding:10px 14px;background:#081522ee;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;z-index:500}.brand{font-size:19px;font-weight:850}.brand span{color:var(--mint)}.small{font-size:11px;color:var(--muted)}.main{min-height:0;display:grid;grid-template-columns:340px 1fr}.side{padding:10px;overflow:auto;border-right:1px solid var(--line)}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:11px;margin-bottom:9px}h2{font-size:14px;margin:0 0 9px}input,select{width:100%;padding:11px;background:#091a29;border:1px solid var(--line);border-radius:10px;color:white;font:inherit}.row{display:flex;gap:7px;margin-top:7px}button{padding:11px;border:0;border-radius:10px;background:var(--mint);color:#05221f;font-weight:750}button.alt{background:#173249;color:white;border:1px solid var(--line)}.row button{flex:1}.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.mode{background:#173249;color:#b4c6d3;font-size:12px;padding:9px 2px}.mode.active{background:#12483f;color:#b7fff1;outline:1px solid var(--mint)}#map{height:100%;width:100%;background:#d7e0e7}#mapStatus{position:absolute;z-index:520;left:50%;top:10px;transform:translateX(-50%);display:none;max-width:calc(100% - 24px);background:#071a2bed;color:#fff;border:1px solid #547187;border-radius:12px;padding:9px 12px;font-size:12px;box-shadow:0 4px 16px #0005;text-align:center}#mapStatus button{margin-left:8px;padding:6px 9px;font-size:11px}.info{font-size:12px;line-height:1.5;color:var(--muted)}.poi-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.poi-grid button{font-size:12px;padding:9px 5px}.poi-status{font-size:12px;color:var(--muted);margin-top:7px;line-height:1.4}.leaflet-popup-content{font:13px system-ui;line-height:1.4}#summary{font-size:13px;line-height:1.5;margin-top:9px}#steps{font-size:12px;padding-left:18px;max-height:150px;overflow:auto}#navBanner{display:none;position:absolute;z-index:550;top:12px;left:50%;transform:translateX(-50%);width:min(520px,calc(100% - 24px));background:#071a2bea;border:1px solid #37d6c0;border-radius:14px;padding:11px 14px;box-shadow:0 5px 22px #0009;pointer-events:none}#navInstruction{font-size:15px;font-weight:800;line-height:1.25}#navDistance{font-size:12px;color:#9deee2;margin-top:4px}#followBtn{width:100%;margin-top:7px} .car-arrow{width:34px;height:34px;display:grid;place-items:center;filter:drop-shadow(0 2px 3px #0009)}.car-arrow span{display:block;font-size:30px;line-height:30px;color:#087fdb;text-shadow:-1px -1px white,1px 1px white}#toast{position:fixed;z-index:2000;bottom:15px;left:50%;transform:translateX(-50%);background:#06111d;border:1px solid var(--line);padding:10px 14px;border-radius:10px;display:none;max-width:90%}
 @media(max-width:760px){
 .app{height:100dvh;height:100svh;grid-template-rows:52px minmax(0,1fr)}
 .top{padding:7px 12px;position:relative;z-index:800}.brand{font-size:17px}
@@ -24,37 +24,24 @@
 <section class="panel"><h2>Para onde vamos?</h2><input id="dest" placeholder="Endereço, bairro ou local"><div class="row"><button id="search">Buscar destino</button><button class="alt" id="pick">No mapa</button></div><input id="origin" style="margin-top:7px" placeholder="Origem (vazio = GPS)"></section>
 <section class="panel"><h2>Meio de transporte</h2><div class="modes"><button class="mode active" data-mode="auto">🚗 Carro</button><button class="mode" data-mode="motorcycle">🏍️ Moto</button><button class="mode" data-mode="truck">🚚 Caminhão</button><button class="mode" data-mode="bicycle">🚲 Bike</button><button class="mode" data-mode="pedestrian">🚶 A pé</button><button class="mode" data-mode="bicycle">♿ Acessível*</button></div><p class="info">*Ainda sem garantia de acessibilidade nas calçadas e travessias.</p></section>
 <section class="panel"><h2>Navegação</h2><div class="row"><button id="gps">◎ Minha localização</button><button class="alt" id="go">Traçar rota</button></div><div class="row"><button class="alt" id="voice">🔊 Ativar voz</button><button class="alt" id="clear">Limpar rota</button></div><button class="alt" id="followBtn">◎ Acompanhar localização</button><div id="summary">Escolha um destino para calcular o caminho.</div><ol id="steps"></ol></section>
-<section class="panel"><h2>Mapas offline</h2><select id="region"><option value="recife">Recife e Região Metropolitana</option><option value="pe">Pernambuco inteiro</option></select><p class="info">O app pode ser instalado e sua interface abre offline. Esta versão ainda depende da internet para carregar mapas novos, pesquisar endereços e calcular rotas. Download integral de regiões e roteamento offline serão adicionados no módulo Android nativo.</p></section>
+<section class="panel"><h2>Pontos de referência próximos</h2><div class="poi-grid"><button class="alt" data-poi="hospital">🏥 Hospitais</button><button class="alt" data-poi="fuel">⛽ Postos</button><button class="alt" data-poi="restaurant">🍽️ Restaurantes</button><button class="alt" data-poi="parking">🅿️ Estacionamentos</button><button class="alt" data-poi="pharmacy">💊 Farmácias</button><button class="alt" data-poi="tourism">📍 Pontos turísticos</button></div><div id="poiStatus" class="poi-status">Escolha uma categoria para localizar pontos cadastrados no OpenStreetMap na área visível.</div></section>\n<section class="panel"><h2>Mapas offline</h2><select id="region"><option value="recife">Recife e Região Metropolitana</option><option value="pe">Pernambuco inteiro</option></select><p class="info">O app pode ser instalado e sua interface abre offline. Esta versão ainda depende da internet para carregar mapas novos, pesquisar endereços e calcular rotas. Download integral de regiões e roteamento offline serão adicionados no módulo Android nativo.</p></section>
 <section class="panel"><h2>Favoritos</h2><div id="favs" class="info">Nenhum favorito.</div></section>
 <p class="info">Dados cartográficos © OpenStreetMap contributors. Rotas e geocodificação usam serviços públicos de demonstração, sujeitos a limites.</p>
 </aside><div id="map"></div><div id="mapStatus">Carregando ruas… <button id="retryMap">Tentar novamente</button></div><div id="navBanner"><div id="navInstruction">Preparando navegação…</div><div id="navDistance">Aguardando GPS</div></div></div></div><div id="toast"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script>
 const $=id=>document.getElementById(id),toast=s=>{let t=$('toast');t.textContent=s;t.style.display='block';clearTimeout(window.tt);window.tt=setTimeout(()=>t.style.display='none',3200)};
 const map=L.map('map',{zoomControl:true,preferCanvas:true}).setView([-8.0578,-34.8829],12);
-let baseLayer=null,mapProvider='osm',tileErrors=0,tileSuccess=0;
+let baseLayer=null,tileErrors=0,tileSuccess=0;
 const mapStatus=$('mapStatus');
-const tileProviders={
- osm:{url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',options:{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}},
- osmfr:{url:'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png',options:{maxZoom:20,subdomains:'abc',attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors • <a href="https://www.openstreetmap.fr/">OpenStreetMap France</a>'}}
-};
-function mapMessage(message,showRetry=true){mapStatus.innerHTML='';mapStatus.append(document.createTextNode(message+' '));if(showRetry){const b=document.createElement('button');b.id='retryMap';b.textContent='Tentar novamente';b.onclick=()=>setMapProvider(mapProvider==='osm'?'osmfr':'osm');mapStatus.append(b)}mapStatus.style.display='block'}
-function setMapProvider(name){
- mapProvider=name;tileErrors=0;tileSuccess=0;
- if(baseLayer)map.removeLayer(baseLayer);
- const cfg=tileProviders[name];baseLayer=L.tileLayer(cfg.url,cfg.options);
- baseLayer.on('tileload',()=>{tileSuccess++;if(tileSuccess>=2){mapStatus.style.display='none'}});
- baseLayer.on('tileerror',()=>{
-  tileErrors++;
-  if(tileErrors>=3){
-   if(mapProvider==='osm'){mapMessage('Servidor principal sem resposta. Tentando mapa alternativo…',false);setMapProvider('osmfr')}
-   else mapMessage('Não foi possível carregar as ruas. Confira a internet e tente novamente.');
-  }
- });
- baseLayer.addTo(map);
- mapStatus.style.display='block';mapStatus.textContent=name==='osm'?'Carregando mapa de ruas…':'Carregando mapa alternativo…';
+function mapMessage(message){mapStatus.innerHTML='';mapStatus.append(document.createTextNode(message+' '));const b=document.createElement('button');b.textContent='Tentar novamente';b.onclick=()=>setMapLayer();mapStatus.append(b);mapStatus.style.display='block'}
+function setMapLayer(){
+ tileErrors=0;tileSuccess=0;if(baseLayer)map.removeLayer(baseLayer);
+ baseLayer=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',updateWhenIdle:true,keepBuffer:3});
+ baseLayer.on('tileload',()=>{tileSuccess++;if(tileSuccess>=2)mapStatus.style.display='none'});
+ baseLayer.on('tileerror',()=>{tileErrors++;if(tileErrors>=4)mapMessage('As ruas não carregaram. Verifique a conexão e tente novamente.')});
+ baseLayer.addTo(map);mapStatus.style.display='block';mapStatus.textContent='Carregando ruas e nomes de locais…';
 }
-setMapProvider('osm');
-$('retryMap').onclick=()=>setMapProvider(mapProvider==='osm'?'osmfr':'osm');
+setMapLayer();
 let pos=null,dest=null,dm=null,line=null,mode='auto',voice=false,pick=false,userMark=null;
 let watchId=null,following=false,routePoints=[],maneuvers=[],lastSpoken=-1,lastHeading=0;
 const navBanner=$('navBanner'),navInstruction=$('navInstruction'),navDistance=$('navDistance');
@@ -100,7 +87,32 @@ function refreshMap(){setTimeout(()=>map.invalidateSize({pan:false}),120)}
 window.addEventListener('resize',refreshMap);window.addEventListener('orientationchange',()=>setTimeout(refreshMap,350));
 if(window.ResizeObserver){new ResizeObserver(refreshMap).observe($('map'));}
 map.whenReady(()=>setTimeout(refreshMap,250));
-const favKey='navegape-favs',fav=()=>JSON.parse(localStorage.getItem(favKey)||'[]');
+
+const poiLayer=L.layerGroup().addTo(map);
+const poiTags={hospital:'["amenity"="hospital"]',fuel:'["amenity"="fuel"]',restaurant:'["amenity"="restaurant"]',parking:'["amenity"="parking"]',pharmacy:'["amenity"="pharmacy"]',tourism:'["tourism"]'};
+async function searchPOI(category){
+ const status=$('poiStatus');status.textContent='Buscando pontos na área visível…';
+ const bounds=map.getBounds(),bbox=[bounds.getSouth(),bounds.getWest(),bounds.getNorth(),bounds.getEast()].join(',');
+ const selector=poiTags[category];if(!selector){status.textContent='Categoria não disponível.';return}
+ const query='[out:json][timeout:18];(node'+selector+'('+bbox+');way'+selector+'('+bbox+');relation'+selector+'('+bbox+'););out center tags;';
+ try{
+  const response=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:'data='+encodeURIComponent(query)});
+  if(!response.ok)throw Error('Serviço de pontos temporariamente indisponível');
+  const data=await response.json();poiLayer.clearLayers();let count=0;
+  for(const item of data.elements||[]){
+   const lat=item.lat??item.center?.lat,lon=item.lon??item.center?.lon;if(!Number.isFinite(lat)||!Number.isFinite(lon))continue;
+   const name=item.tags?.name||({hospital:'Hospital sem nome cadastrado',fuel:'Posto sem nome cadastrado',restaurant:'Restaurante sem nome cadastrado',parking:'Estacionamento sem nome cadastrado',pharmacy:'Farmácia sem nome cadastrado',tourism:'Ponto de interesse'}[category]);
+   const address=[item.tags?.['addr:street'],item.tags?.['addr:housenumber'],item.tags?.['addr:suburb']].filter(Boolean).join(', ');
+   const marker=L.marker([lat,lon]).bindPopup('<b>'+escapeHTML(name)+'</b>'+(address?'<br>'+escapeHTML(address):'')+'<br><button class="poi-go" data-lat="'+lat+'" data-lon="'+lon+'" data-name="'+escapeHTML(name)+'">Traçar rota até aqui</button>');
+   marker.addTo(poiLayer);count++;
+  }
+  status.textContent=count?count+' ponto(s) encontrados na área visível. Toque em um marcador para ver detalhes e escolher como destino.':'Nenhum ponto dessa categoria encontrado na área visível. Aproxime ou mova o mapa e tente novamente.';
+ }catch(error){status.textContent=error.message+'. Tente novamente mais tarde.'}
+}
+function escapeHTML(value){return String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+map.on('popupopen',event=>{const button=event.popup.getElement()?.querySelector('.poi-go');if(button)button.onclick=()=>{const p={lat:+button.dataset.lat,lon:+button.dataset.lon,name:button.dataset.name};$('dest').value=p.name;setDest(p);map.closePopup();toast('Ponto escolhido como destino')}});
+document.querySelectorAll('[data-poi]').forEach(button=>button.onclick=()=>searchPOI(button.dataset.poi));
+\nconst favKey='navegape-favs',fav=()=>JSON.parse(localStorage.getItem(favKey)||'[]');
 function setDest(p){dest=p;if(dm)map.removeLayer(dm);dm=L.marker([p.lat,p.lon]).addTo(map).bindPopup(p.name);map.setView([p.lat,p.lon],15)}
 function renderFav(){let a=fav();$('favs').innerHTML=a.length?a.map((p,i)=>'<div style="display:flex;justify-content:space-between;margin:6px 0;gap:5px"><span>'+p.name+'</span><button class="alt" data-f="'+i+'">Usar</button></div>').join(''):'Nenhum favorito.';document.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{let p=fav()[+b.dataset.f];$('dest').value=p.name;setDest(p)})}
 async function geo(q){let r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&q='+encodeURIComponent(q+', Pernambuco, Brasil'),{headers:{'Accept-Language':'pt-BR'}});if(!r.ok)throw Error('Busca indisponível');let a=await r.json();if(!a.length)throw Error('Endereço não encontrado');return{lat:+a[0].lat,lon:+a[0].lon,name:a[0].display_name.split(',').slice(0,3).join(',')}}
