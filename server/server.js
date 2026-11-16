@@ -195,6 +195,9 @@ function roomPlayers(room) {
     nick: p.nick,
     level: p.level || 1,
     online: !!(p.ws && p.ws.readyState === WebSocket.OPEN),
+    score: Math.max(0, Number(p.score) || 0),
+    kills: Math.max(0, Number(p.kills) || 0),
+    size: Math.max(0, Number(p.size) || 8),
     slot: p.slot,
     staffRole: p.staffRole || ''
   }));
@@ -621,7 +624,7 @@ wss.on('connection', (ws, req, user) => {
       room.alivePlayers.set(victimId, false);
       const requestedKiller = String(m.killerId || '');
       const killerId = requestedKiller && room.players.has(requestedKiller) && requestedKiller !== victimId
-        ? (senderIsHost ? requestedKiller : '')
+        ? requestedKiller
         : '';
       if (killerId && !room.deathCredited.has(victimId)) {
         room.deathCredited.add(victimId);
@@ -739,15 +742,31 @@ wss.on('connection', (ws, req, user) => {
         d, l: Math.max(1, Math.min(10000, Math.floor(Number(a.l) || 1))),
         al: a.al ? 1 : 0, r: Math.max(4, Math.min(40, Number(a.r) || 10)),
         c: String(a.c || '').slice(0, 24), n: String(a.n || user.nick || 'Jogador').slice(0, 24),
+        sc: Math.max(0, Math.min(1000000000, Math.floor(Number(a.sc) || 0))),
+        ki: Math.max(0, Math.min(1000000, Math.floor(Number(a.ki) || 0))),
         sk: String(a.sk || 'liso').slice(0, 24), ac: String(a.ac || 'nenhum').slice(0, 24),
         ta: String(a.ta || 'normal').slice(0, 24), rt: String(a.rt || 'nenhum').slice(0, 24),
         ht: String(a.ht || 'nenhum').slice(0, 24), cl: String(a.cl || 'nenhum').slice(0, 24), mt: Math.max(0, Math.min(60, Number(a.mt) || 0)), mp: Math.max(1, Math.min(16, Number(a.mp) || 1)), g
       };
       sender.lastAvatarAt = now;
+      sender.score = avatar.sc;
+      sender.kills = Math.max(Number(room.killCounts.get(user.id) || 0), avatar.ki);
+      sender.size = avatar.l;
       sender.lastAvatar = { x: avatar.x, y: avatar.y, r: avatar.r, mt: avatar.mt, mp: avatar.mp, at: now };
       if (avatar.al) { room.alivePlayers.set(user.id, true); room.deathCredited.delete(user.id); }
       broadcast(room, { t: 'avatar', id: user.id, a: avatar }, user.id);
       if (!room.startedAt) room.startedAt = now;
+      if (now - Number(room.lastLiveRankAt || 0) >= 250) {
+        room.lastLiveRankAt = now;
+        const ranking = [...room.players.values()].map(p => ({
+          id: p.id, nick: p.nick, level: p.level || 1,
+          online: !!(p.ws && p.ws.readyState === WebSocket.OPEN),
+          score: Math.max(0, Number(p.score) || 0),
+          kills: Math.max(Number(room.killCounts.get(p.id) || 0), Number(p.kills) || 0),
+          size: Math.max(0, Number(p.size) || 8), slot: p.slot
+        })).sort((a, b) => b.score - a.score || b.kills - a.kills || a.nick.localeCompare(b.nick));
+        broadcast(room, { t: 'match_ranking', roomId: room.id, mode: room.mode, ranking, live: true, serverTime: now });
+      }
       if (now - Number(room.lastClockBroadcastAt || 0) >= 1000) {
         room.lastClockBroadcastAt = now;
         broadcast(room, { t: 'room_clock', roomId: room.id, mode: room.mode, elapsedMs: Math.max(0, now - room.startedAt), serverTime: now });
