@@ -246,6 +246,7 @@ function createRoom(mode) {
     killCounts: new Map(),
     alivePlayers: new Map(),
     deathCredited: new Set(),
+    deathCounts: new Map(),
     botDeathAt: new Map(),
     hostId: null,
     hostType: 'bot-pro',
@@ -632,6 +633,15 @@ wss.on('connection', (ws, req, user) => {
       const alreadyDead = room.alivePlayers.get(victimId) === false;
       if (alreadyDead && !senderIsHost) return;
       room.alivePlayers.set(victimId, false);
+      if (!alreadyDead && room.mode === 'quick') {
+        const deaths = Number(room.deathCounts.get(victimId) || 0) + 1;
+        room.deathCounts.set(victimId, deaths);
+        if (deaths >= 3) {
+          broadcast(room, { t: 'room_finished', mode: room.mode, reason: 'three_deaths', victimId, deaths, at: Date.now() });
+          destroyRoom(room, false);
+          return;
+        }
+      }
       const requestedKiller = String(m.killerId || '');
       const killerId = requestedKiller && room.players.has(requestedKiller) && requestedKiller !== victimId
         ? requestedKiller
