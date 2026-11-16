@@ -647,7 +647,7 @@ wss.on('connection', (ws, req, user) => {
           const item = {
             id, x: Math.max(-1000000, Math.min(1000000, x)),
             y: Math.max(-1000000, Math.min(1000000, y)),
-            type: Math.max(0, Math.min(8, Math.floor(Number(raw.type) || 0))),
+            type: Math.max(0, Math.min(9, Math.floor(Number(raw.type) || 0))),
             color: /^#[0-9a-f]{6}$/i.test(String(raw.color || '')) ? String(raw.color) : '#ffd23e',
             r: Math.max(3, Math.min(30, radius))
           };
@@ -666,7 +666,8 @@ wss.on('connection', (ws, req, user) => {
       if (!drop || drop.claimedBy) return;
       const avatar = room.players.get(user.id)?.lastAvatar;
       if (!avatar || Date.now() - Number(avatar.at || 0) > 1500) return;
-      const reach = Math.max(65, Number(drop.r || 6) + Number(avatar.r || 10) + 24);
+      const magnetReach = Number(avatar.mt) > 0 && Number(avatar.mp) >= 16 ? 1200 : 0;
+      const reach = Math.max(65, Number(drop.r || 6) + Number(avatar.r || 10) + 24, magnetReach);
       if (Math.hypot(Number(avatar.x) - drop.x, Number(avatar.y) - drop.y) > reach) return;
       drop.claimedBy = user.id;
       drop.claimedAt = Date.now();
@@ -711,10 +712,10 @@ wss.on('connection', (ws, req, user) => {
         c: String(a.c || '').slice(0, 24), n: String(a.n || user.nick || 'Jogador').slice(0, 24),
         sk: String(a.sk || 'liso').slice(0, 24), ac: String(a.ac || 'nenhum').slice(0, 24),
         ta: String(a.ta || 'normal').slice(0, 24), rt: String(a.rt || 'nenhum').slice(0, 24),
-        ht: String(a.ht || 'nenhum').slice(0, 24), cl: String(a.cl || 'nenhum').slice(0, 24), g
+        ht: String(a.ht || 'nenhum').slice(0, 24), cl: String(a.cl || 'nenhum').slice(0, 24), mt: Math.max(0, Math.min(60, Number(a.mt) || 0)), mp: Math.max(1, Math.min(16, Number(a.mp) || 1)), g
       };
       sender.lastAvatarAt = now;
-      sender.lastAvatar = { x: avatar.x, y: avatar.y, r: avatar.r, at: now };
+      sender.lastAvatar = { x: avatar.x, y: avatar.y, r: avatar.r, mt: avatar.mt, mp: avatar.mp, at: now };
       if (avatar.al) { room.alivePlayers.set(user.id, true); room.deathCredited.delete(user.id); }
       broadcast(room, { t: 'avatar', id: user.id, a: avatar }, user.id);
       if (!room.startedAt) room.startedAt = now;
