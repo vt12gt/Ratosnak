@@ -536,6 +536,28 @@ wss.on('connection', (ws, req, user) => {
     let roomId = roomByUser.get(user.id);
     let room = roomId && rooms.get(roomId);
 
+    if (m.t === 'staff_boss') {
+      const roles = Array.isArray(user.announcementRoles) ? user.announcementRoles : [];
+      const allowed = roles.some(role => ['founder', 'spadmin', 'gm'].includes(role));
+      const action = String(m.action || '');
+      if (!allowed) {
+        send(ws, { t: 'staff_boss_result', ok: false, action, error: 'staff_only' });
+        return;
+      }
+      if (!room || !room.players.has(user.id) || room.mode !== 'treino') {
+        send(ws, { t: 'staff_boss_result', ok: false, action, error: 'live_room_required' });
+        return;
+      }
+      if (action !== 'start' && action !== 'stop') {
+        send(ws, { t: 'staff_boss_result', ok: false, action, error: 'invalid_action' });
+        return;
+      }
+      broadcast(room, { t: 'boss_event', action, by: user.nick, issuedAt: Date.now() });
+      send(ws, { t: 'staff_boss_result', ok: true, action });
+      console.info('[staff] boss_event', JSON.stringify({ action, userId: user.id, nickname: user.nick, roomId: room.id, roles }));
+      return;
+    }
+
     if (m.t === 'play') {
       const allowedModes = new Set(['quick','survival','challenge','team','boss','infinite','daily','treino','mundial']);
       const requestedMode = String(m.mode || 'quick');
