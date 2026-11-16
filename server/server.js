@@ -633,14 +633,11 @@ wss.on('connection', (ws, req, user) => {
       const alreadyDead = room.alivePlayers.get(victimId) === false;
       if (alreadyDead && !senderIsHost) return;
       room.alivePlayers.set(victimId, false);
+      let quickRoomFinished = false;
       if (!alreadyDead && room.mode === 'quick') {
         const deaths = Number(room.deathCounts.get(victimId) || 0) + 1;
         room.deathCounts.set(victimId, deaths);
-        if (deaths >= 3) {
-          broadcast(room, { t: 'room_finished', mode: room.mode, reason: 'three_deaths', victimId, deaths, at: Date.now() });
-          destroyRoom(room, false);
-          return;
-        }
+        quickRoomFinished = deaths >= 3;
       }
       const requestedKiller = String(m.killerId || '');
       const killerId = requestedKiller && room.players.has(requestedKiller) && requestedKiller !== victimId
@@ -652,6 +649,10 @@ wss.on('connection', (ws, req, user) => {
       }
       if (!alreadyDead || killerId) broadcast(room, { t: 'player_death', victimId, killerId, mode: room.mode, at: Date.now() });
       if (killerId) broadcastLiveRanking(room);
+      if (quickRoomFinished) {
+        broadcast(room, { t: 'room_finished', mode: room.mode, reason: 'three_deaths', victimId, deaths: Number(room.deathCounts.get(victimId) || 3), at: Date.now() });
+        destroyRoom(room, false);
+      }
       return;
     }
     if (m.t === 'world_event') {
