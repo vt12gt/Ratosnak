@@ -628,6 +628,16 @@ wss.on('connection', (ws, req, user) => {
         broadcast(room, { t: 'bot_death', botIndex, killerId, mode: room.mode, at: now });
         return;
       }
+      if (e.kind === 'boss_magnet') {
+        if (!senderIsHost || room.mode !== 'treino') return;
+        const x = Number(e.x), y = Number(e.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        const now = Date.now();
+        if (now - Number(room.lastBossMagnetAt || 0) < 5000) return;
+        room.lastBossMagnetAt = now;
+        broadcast(room, { t: 'boss_magnet', x: Math.max(-1000000, Math.min(1000000, x)), y: Math.max(-1000000, Math.min(1000000, y)), at: now });
+        return;
+      }
       if (e.kind === 'drops') {
         const source = String(e.source || '');
         if (!['bot', 'player'].includes(source)) return;
