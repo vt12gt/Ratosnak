@@ -16,7 +16,7 @@ const ALLOWED_ORIGINS = new Set([
   'http://localhost:8158',
   'http://localhost:8787'
 ]);
-const MAX_PLAYERS = 4;
+const MAX_PLAYERS = 10;
 const COUNTDOWN_MS = 5000;
 const RECONNECT_GRACE_MS = 30000;
 
