@@ -212,6 +212,16 @@ function roster(room) {
   const players = roomPlayers(room);
   for (const p of room.players.values()) send(p.ws, { t: 'roster', mode: room.mode, roomKey: room.roomKey, hostType: room.hostType, hostLabel: 'Bot Pro', players });
 }
+function broadcastLiveRanking(room) {
+  const ranking = [...room.players.values()].map(p => ({
+    id: p.id, nick: p.nick, level: p.level || 1,
+    online: !!(p.ws && p.ws.readyState === WebSocket.OPEN),
+    score: Math.max(0, Number(p.score) || 0),
+    kills: Math.max(0, Number(room.killCounts.get(p.id) || p.kills) || 0),
+    size: Math.max(8, Number(p.size) || 8), slot: p.slot
+  })).sort((a, b) => b.score - a.score || b.kills - a.kills || a.nick.localeCompare(b.nick));
+  broadcast(room, { t: 'match_ranking', roomId: room.id, mode: room.mode, ranking, live: true, serverTime: Date.now() });
+}
 function clearCountdown(room) {
   if (room.countdown) clearTimeout(room.countdown);
   room.countdown = null;
@@ -631,6 +641,7 @@ wss.on('connection', (ws, req, user) => {
         room.killCounts.set(killerId, Number(room.killCounts.get(killerId) || 0) + 1);
       }
       if (!alreadyDead || killerId) broadcast(room, { t: 'player_death', victimId, killerId, mode: room.mode, at: Date.now() });
+      if (killerId) broadcastLiveRanking(room);
       return;
     }
     if (m.t === 'world_event') {
