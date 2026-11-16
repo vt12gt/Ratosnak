@@ -17,7 +17,7 @@ const ALLOWED_ORIGINS = new Set([
 ]);
 const MAX_PLAYERS = 10;
 const COUNTDOWN_MS = 5000;
-const RECONNECT_GRACE_MS = 30000;
+const RECONNECT_GRACE_MS = 120000;
 const WORLD_BOSS_TIME_ZONE = 'America/Recife';
 const WORLD_BOSS_STARTS = [600, 1320];
 const WORLD_BOSS_DURATION_MIN = 60;
@@ -453,9 +453,13 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 const heartbeat = setInterval(() => {
   for (const ws of wss.clients) {
     if (ws.isAlive === false) {
-      console.warn('[ws] heartbeat_timeout', JSON.stringify({ userId: ws.user && ws.user.id }));
-      ws.terminate();
-      continue;
+      ws.missedPongs = Number(ws.missedPongs || 0) + 1;
+      console.warn('[ws] heartbeat_missed', JSON.stringify({ userId: ws.user && ws.user.id, missed: ws.missedPongs }));
+      if (ws.missedPongs >= 3) {
+        console.warn('[ws] heartbeat_timeout', JSON.stringify({ userId: ws.user && ws.user.id }));
+        ws.terminate();
+        continue;
+      }
     }
     ws.isAlive = false;
     try { ws.ping(); } catch (_) { ws.terminate(); }
@@ -496,7 +500,8 @@ wss.on('connection', (ws, req, user) => {
   socketsByUser.set(user.id, ws);
   ws.user = user;
   ws.isAlive = true;
-  ws.on('pong', () => { ws.isAlive = true; });
+  ws.missedPongs = 0;
+  ws.on('pong', () => { ws.isAlive = true; ws.missedPongs = 0; });
   // Revalida a sessão central periodicamente: logout no portal também derruba o multiplayer.
   const sessionCheck = setInterval(async () => {
     if (ws.readyState !== WebSocket.OPEN) return;
