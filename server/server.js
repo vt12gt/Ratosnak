@@ -450,6 +450,18 @@ const server = http.createServer(async (req, res) => {
 });
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+const heartbeat = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) {
+      console.warn('[ws] heartbeat_timeout', JSON.stringify({ userId: ws.user && ws.user.id }));
+      ws.terminate();
+      continue;
+    }
+    ws.isAlive = false;
+    try { ws.ping(); } catch (_) { ws.terminate(); }
+  }
+}, 25000);
+if (typeof heartbeat.unref === 'function') heartbeat.unref();
 server.on('upgrade', async (req, socket, head) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname !== '/ws') {
@@ -483,6 +495,8 @@ wss.on('connection', (ws, req, user) => {
   }
   socketsByUser.set(user.id, ws);
   ws.user = user;
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
   // Revalida a sessão central periodicamente: logout no portal também derruba o multiplayer.
   const sessionCheck = setInterval(async () => {
     if (ws.readyState !== WebSocket.OPEN) return;
@@ -747,7 +761,8 @@ wss.on('connection', (ws, req, user) => {
     }
   });
 
-  ws.on('close', () => {
+  ws.on('close', (code, reason) => {
+    console.info('[ws] socket_closed', JSON.stringify({ userId: user.id, code, reason: String(reason || '').slice(0, 120) }));
     clearInterval(sessionCheck);
     const staffTimer = staffPresenceTimers.get(user.id);
     if (staffTimer) { clearInterval(staffTimer); staffPresenceTimers.delete(user.id); }
